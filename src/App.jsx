@@ -2305,10 +2305,12 @@ function TrendReport({ type, accounts, transactions, excludedTxns, startDate, en
     ...valStyle(n,neg), fontWeight:700, color: n===0 ? rt.subtotalText : (n>0?(neg?rt.neg:rt.pos):(neg?rt.pos:rt.neg)),
   });
 
+  const noParent = v => !v || v === "null" || v === "undefined";
+
   // Render tree rows for trend view
   const renderTrendTree = (typeAccts, parentId, depth, neg) => {
     return typeAccts
-      .filter(a => (a.parentId||"") === (parentId||""))
+      .filter(a => depth === 0 ? noParent(a.parentId) : (a.parentId||"") === (parentId||""))
       .flatMap(a => {
         const total = subtreeTotal(a.id);
         if (periods.every(p=>subtreeColFn(a.id,p)===0) && total===0) return [];
@@ -2372,7 +2374,7 @@ function TrendReport({ type, accounts, transactions, excludedTxns, startDate, en
         <tbody>
           {groups.map(g=>{
             const typeAccts = accounts.filter(a=>a.type===g.typeKey&&!a.inactive);
-            const rootAccts = typeAccts.filter(a=>!a.parentId||(a.parentId===""));
+            const rootAccts = typeAccts.filter(a=>noParent(a.parentId));
             const totP = p => grpRootCol(rootAccts,p);
             const totAll = grpRootTotal(rootAccts);
             return (
@@ -2391,8 +2393,8 @@ function TrendReport({ type, accounts, transactions, excludedTxns, startDate, en
             );
           })}
           {type==="pnl"&&(()=>{
-            const revAccts = accounts.filter(a=>a.type==="Revenue"&&!a.inactive&&(!a.parentId||a.parentId===""));
-            const expAccts = accounts.filter(a=>a.type==="Expense"&&!a.inactive&&(!a.parentId||a.parentId===""));
+            const revAccts = accounts.filter(a=>a.type==="Revenue"&&!a.inactive&&noParent(a.parentId));
+            const expAccts = accounts.filter(a=>a.type==="Expense"&&!a.inactive&&noParent(a.parentId));
             return (
               <tr style={{background:rt.grandBg}}>
                 <td style={{padding:"6px 10px 6px 32px",fontSize:12,fontWeight:700,color:rt.grandText,borderTop:`1px solid ${rt.border}`}}>Net Income</td>
@@ -3329,8 +3331,12 @@ export default function FinanceApp() {
     return (acct.balance || 0) + childTotal;
   };
 
+  const noParentId = v => !v || v === "null" || v === "undefined";
+
   const renderAccountTree = (allAccounts, parentId, depth, posClass, negClass) => {
-    const children = allAccounts.filter(a => (a.parentId||"") === (parentId||""));
+    const children = depth === 0
+      ? allAccounts.filter(a => noParentId(a.parentId))
+      : allAccounts.filter(a => (a.parentId||"") === (parentId||""));
     return children.flatMap(a => {
       const sub = subtreeBalance(allAccounts, a.id);
       if (sub === 0) return [];
@@ -3361,7 +3367,10 @@ export default function FinanceApp() {
   useEffect(() => {
     const applyData = (d) => {
       if (d.transactions)    setTransactions(d.transactions);
-      if (d.accounts)        setAccounts(d.accounts);
+      if (d.accounts)        setAccounts(d.accounts.map(a=>({
+        ...a,
+        parentId: (!a.parentId || a.parentId === "null" || a.parentId === "undefined") ? "" : a.parentId,
+      })));
       if (d.sources)         setSources(d.sources);
       if (d.rules)           setRules(d.rules);
       if (d.manualJEs)       setManualJEs(d.manualJEs);
@@ -3812,9 +3821,10 @@ export default function FinanceApp() {
                   const isReconType   = type==="Asset" || type==="Liability";
 
                   // Recursive tree flatten: each entry gets {a, depth}
+                  const noParent = v => !v || v === "null" || v === "undefined";
                   const flattenTree = (parentId, depth) => {
                     return visible
-                      .filter(a => (a.parentId||"") === (parentId||""))
+                      .filter(a => depth === 0 ? noParent(a.parentId) : (a.parentId||"") === (parentId||""))
                       .flatMap(a => [
                         {a, depth},
                         ...flattenTree(a.id, depth+1),
