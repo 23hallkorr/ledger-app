@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Transaction {
+  id              String   @id
+  date            String
+  description     String
+  amount          Float
+  accountId       String?
+  sourceId        String?
+  transferMatchId String?
+  reconciled      Boolean  @default(false)
+  excluded        Boolean  @default(false)
+  splits          Json?
+  createdAt       DateTime @default(now())
+}
+
+model Account {
+  id         String  @id
+  name       String
+  type       String
+  cashFlow   String?
+  isBankFeed Boolean @default(false)
+  parentId   String?
+  sortOrder  Int     @default(0)
+  inactive   Boolean @default(false)
+}
+
+model Source {
+  id   String @id
+  name String
+}
+
+model Rule {
+  id        String @id
+  pattern   String
+  matchType String
+  accountId String
+}
+
+model ManualJE {
+  id    String @id
+  date  String
+  memo  String
+  lines Json
+}
+
+model Reconciliation {
+  id          String   @id @default(cuid())
+  accountId   String   @unique
+  lastDate    String
+  lastBalance Float
+  updatedAt   DateTime @updatedAt
+}
+
+model Setting {
+  key   String @id
+  value Json?
+}
