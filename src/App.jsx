@@ -75,8 +75,8 @@ const styles = `
   .txn-count span{color:var(--accent);font-weight:500;}
 
   /* Main */
-  .main{flex:1;overflow-y:auto;background:var(--bg);}
-  .page{padding:28px 32px;max-width:1160px;}
+  .main{flex:1;overflow-y:auto;background:var(--bg);min-width:0;}
+  .page{padding:24px 28px;max-width:100%;}
   .page-title{font-family:'DM Serif Display',serif;font-size:26px;color:var(--text);margin-bottom:3px;}
   .page-sub{color:var(--text2);font-size:13px;margin-bottom:22px;}
 
@@ -212,12 +212,16 @@ const styles = `
   .stmt-indent{padding-left:34px;}
 
   /* Drill-down modal */
-  .drill-modal{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:0;width:640px;max-width:96vw;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;}
-  .drill-header{padding:20px 22px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;}
+  .drill-modal{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:0;width:min(900px,96vw);max-height:92vh;overflow:hidden;display:flex;flex-direction:column;}
+  .drill-header{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;}
   .drill-title{font-family:'DM Serif Display',serif;font-size:18px;}
   .drill-sub{font-size:12px;color:var(--text3);margin-top:3px;font-family:'DM Mono',monospace;}
   .drill-body{overflow-y:auto;flex:1;}
   .drill-total{padding:12px 22px;border-top:1px solid var(--border);background:var(--surface2);display:flex;justify-content:space-between;align-items:center;}
+  .drill-edit-btn{background:none;border:none;color:var(--blue);font-size:12px;cursor:pointer;padding:2px 4px;opacity:.7;font-family:'DM Sans',sans-serif;}
+  .drill-edit-btn:hover{opacity:1;text-decoration:underline;}
+  .drill-je-btn{background:none;border:none;color:var(--purple);font-size:12px;cursor:pointer;padding:2px 4px;opacity:.7;font-family:'DM Sans',sans-serif;}
+  .drill-je-btn:hover{opacity:1;text-decoration:underline;}
 
   /* Modal */
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;display:flex;align-items:center;justify-content:center;}
@@ -592,8 +596,9 @@ const styles = `
     .drill-modal      {
       width:100% !important; max-width:100% !important;
       border-radius:18px 18px 0 0 !important;
-      max-height:92svh;
+      max-height:94svh;
     }
+    .mob-hide-on-mobile { display:none !important; }
 
     /* Upload zone */
     .upload-zone      { padding:28px 16px; }
@@ -1160,9 +1165,9 @@ function DrillRowEditable({ t, isDebit, isCredit, abs, counterpart, running, isE
       <td style={p}></td>
       <td style={{...p,whiteSpace:"nowrap"}}>
         <div style={{display:"flex",gap:4,alignItems:"center"}}>
-          <button className="accept-btn" onClick={save}>✓ Save</button>
+          <button className="accept-btn" onClick={save}>✓</button>
           <button className="cancel-btn" onClick={()=>setEditing(false)}>✕</button>
-          {onDelete&&<button className="del-btn" style={{marginLeft:4,color:"var(--red)",borderColor:"rgba(255,82,82,.4)"}} onClick={()=>onDelete(t.id)}>Delete</button>}
+          {onDelete&&<button className="drill-edit-btn" style={{color:"var(--red)"}} onClick={()=>onDelete(t.id)}>Delete</button>}
         </div>
       </td>
     </tr>
@@ -1171,16 +1176,15 @@ function DrillRowEditable({ t, isDebit, isCredit, abs, counterpart, running, isE
   return (
     <tr style={{borderBottom:"1px solid var(--border)",opacity:isExcluded?.85:1,background:isExcluded?"rgba(255,82,82,.03)":""}}>
       <td style={{...p,fontSize:12,color:"var(--text3)",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>{t.date}</td>
-      <td style={{...p,fontSize:13,color:"var(--text)",maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</td>
-      <td style={{...p,fontSize:12,color:"var(--text2)"}}>{counterpart?.name||"—"}</td>
+      <td style={{...p,fontSize:13,color:"var(--text)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</td>
+      <td className="mob-hide-on-mobile" style={{...p,fontSize:12,color:"var(--text2)"}}>{counterpart?.name||"—"}</td>
       <td style={{...p,textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:isDebit?"var(--blue)":"var(--text3)"}}>{isDebit?fmt(abs):""}</td>
       <td style={{...p,textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:isCredit?"var(--purple)":"var(--text3)"}}>{isCredit?fmt(abs):""}</td>
       <td style={{...p,textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:running>=0?"var(--green)":"var(--red)"}}>{fmt(running)}</td>
       <td style={{...p,whiteSpace:"nowrap"}}>
         {t.isJE
-          ? <button className="del-btn" style={{color:"var(--purple)",borderColor:"rgba(167,139,250,.3)"}}
-              onClick={()=>onEditJE&&onEditJE(t.jeId)}>✎ Edit JE</button>
-          : onUpdate&&<button className="del-btn" style={{color:"var(--blue)",borderColor:"rgba(96,165,250,.3)"}} onClick={()=>setEditing(true)}>Edit</button>
+          ? <button className="drill-je-btn" onClick={()=>onEditJE&&onEditJE(t.jeId)}>✎ JE</button>
+          : onUpdate&&<button className="drill-edit-btn" onClick={()=>setEditing(true)}>Edit</button>
         }
       </td>
     </tr>
@@ -1303,7 +1307,7 @@ function DrillModal({ account, transactions, manualJEs, allAccounts, startDate, 
                 <thead><tr>
                   {th("Date")}
                   {th("Description")}
-                  {th("Counterpart Account")}
+                  <th className="mob-hide-on-mobile" style={{padding:"9px 14px",background:"var(--surface2)",borderBottom:"1px solid var(--border)",fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase"}}>Counterpart</th>
                   {th("Debit","right")}
                   {th("Credit","right")}
                   {th("Balance","right")}
@@ -1871,7 +1875,7 @@ function ResizeTh({ width, onResize, children, style={} }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSACTION TABLE
 // ─────────────────────────────────────────────────────────────────────────────
-function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onClassify, onSplit, onMatchTransfer, onDelete, rules, onApplyRules }) {
+function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onClassify, onSplit, onMatchTransfer, onDelete, onUpdate, rules, onApplyRules }) {
   const [selected,      setSelected]      = useState(new Set());
   const [search,        setSearch]        = useState("");
   const [section,       setSection]       = useState("uncategorized");
@@ -1880,6 +1884,8 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onCl
   const [editingId,     setEditingId]     = useState(null);
   const [pendingQueue,  setPendingQueue]  = useState({});
   const [confirmDelId,  setConfirmDelId]  = useState(null);
+  const [editingDescId, setEditingDescId] = useState(null);
+  const [editDescVal,   setEditDescVal]   = useState("");
   const [colWidths,     setColWidths]     = useState({date:90,desc:220,amt:90,cat:200,transfer:110,del:70});
   const [sortKey,       setSortKey]       = useState("date");
   const [sortDir,       setSortDir]       = useState("desc");
@@ -2093,9 +2099,16 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onCl
                           <input type="checkbox" className="cb" checked={selected.has(t.id)} onChange={()=>toggleOne(t.id)}/>
                         </td>
                         <td className="font-mono" style={{color:"var(--text3)",fontSize:12,whiteSpace:"nowrap"}}>{t.date}</td>
-                        <td style={{color:"var(--text)",maxWidth:200}}>
-                          {t.description}
-                          {isMatched && <span className="matched-badge" style={{marginLeft:8}}>🔗 matched</span>}
+                        <td style={{color:"var(--text)",maxWidth:200}} onDoubleClick={e=>{e.stopPropagation();setEditingDescId(t.id);setEditDescVal(t.description||"");}}>
+                          {editingDescId===t.id
+                            ? <input autoFocus type="text" value={editDescVal}
+                                onChange={e=>setEditDescVal(e.target.value)}
+                                onBlur={()=>{if(onUpdate)onUpdate(t.id,{description:editDescVal});setEditingDescId(null);}}
+                                onKeyDown={e=>{if(e.key==="Enter"){if(onUpdate)onUpdate(t.id,{description:editDescVal});setEditingDescId(null);}if(e.key==="Escape")setEditingDescId(null);}}
+                                onClick={e=>e.stopPropagation()}
+                                style={{width:"100%",fontSize:13,padding:"2px 6px",background:"var(--surface2)",border:"1px solid var(--accent)",borderRadius:4,color:"var(--text)"}}/>
+                            : <>{t.description}{isMatched && <span className="matched-badge" style={{marginLeft:8}}>🔗 matched</span>}</>
+                          }
                         </td>
 
                         {showJournal && section==="categorized"
@@ -2362,21 +2375,31 @@ function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete })
       <div className="page-title">Journal Entries</div>
       <div className="page-sub">Manually record multi-line debits and credits. Debits must equal credits to post.</div>
 
-      <div className="card">
+      <div className="card" style={{marginBottom:14}}>
         {/* Header row: date + memo */}
-        <div style={{display:"flex",gap:16,marginBottom:16,flexWrap:"wrap"}}>
-          <div style={{flex:"0 0 160px"}}>
-            <div style={{fontSize:12,color:"var(--text2)",marginBottom:4,fontWeight:500}}>Date</div>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{width:160}}/>
+        <div style={{display:"flex",gap:12,marginBottom:12,flexWrap:"wrap",alignItems:"flex-end"}}>
+          <div style={{flex:"0 0 150px"}}>
+            <div style={{fontSize:11,color:"var(--text3)",marginBottom:3,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.5px"}}>Date</div>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{width:150}}/>
           </div>
-          <div style={{flex:1,minWidth:220}}>
-            <div style={{fontSize:12,color:"var(--text2)",marginBottom:4,fontWeight:500}}>Memo / Description</div>
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{fontSize:11,color:"var(--text3)",marginBottom:3,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.5px"}}>Entry Memo</div>
             <input type="text" value={memo} onChange={e=>setMemo(e.target.value)}
-              placeholder="e.g. Depreciation, accrued interest, opening balance…"
-              style={{background:"var(--surface2)",border:"1px solid var(--border)",borderRadius:"var(--radius)",padding:"7px 12px",fontFamily:"DM Sans,sans-serif",fontSize:13,color:"var(--text)",outline:"none",width:"100%"}}
+              placeholder="e.g. Depreciation, opening balance…"
+              style={{background:"var(--surface2)",border:"1px solid var(--border)",borderRadius:"var(--radius)",padding:"6px 10px",fontFamily:"DM Sans,sans-serif",fontSize:13,color:"var(--text)",outline:"none",width:"100%"}}
               onFocus={e=>e.target.style.borderColor="var(--accent)"}
               onBlur={e=>e.target.style.borderColor="var(--border)"}
             />
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,paddingBottom:2}}>
+            {(totalDr > 0 || totalCr > 0) && (
+              balanced
+                ? <span className="je-balanced">✓ Balanced</span>
+                : <span className="je-unbalanced">✗ {fmt(Math.abs(totalDr-totalCr))} off</span>
+            )}
+            {editingId&&<button className="btn btn-ghost btn-sm" onClick={()=>{setEditingId(null);setDate(new Date().toISOString().slice(0,10));setMemo("");setLines([mkLine(),mkLine()]);}}>Cancel</button>}
+            {flash && <span style={{color:"var(--green)",fontSize:12,fontFamily:"DM Mono,monospace"}}>✓ {editingId?"Updated!":"Posted!"}</span>}
+            <button className="btn btn-primary btn-sm" disabled={!balanced} onClick={post}>{editingId?"Update":"Post Entry"}</button>
           </div>
         </div>
 
@@ -2444,20 +2467,6 @@ function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete })
             </tr>
           </tbody>
         </table>
-
-        {/* Balance status + post */}
-        <div style={{display:"flex",alignItems:"center",gap:14,marginTop:14}}>
-          {(totalDr > 0 || totalCr > 0) && (
-            balanced
-              ? <span className="je-balanced">✓ Balanced</span>
-              : <span className="je-unbalanced">✗ Out of balance by {fmt(Math.abs(totalDr-totalCr))}</span>
-          )}
-          <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
-            {editingId&&<button className="btn btn-ghost" onClick={()=>{setEditingId(null);setDate(new Date().toISOString().slice(0,10));setMemo("");setLines([mkLine(),mkLine()]);}}>Cancel Edit</button>}
-            {flash && <span style={{color:"var(--green)",fontSize:12,fontFamily:"DM Mono,monospace"}}>✓ {editingId?"Updated!":"Posted!"}</span>}
-            <button className="btn btn-primary" disabled={!balanced} onClick={post}>{editingId?"Update Entry":"Post Entry"}</button>
-          </div>
-        </div>
       </div>
 
       {/* History */}
@@ -3625,6 +3634,7 @@ export default function FinanceApp() {
                       onSplit={txn=>setSplitTxn(txn)}
                       onMatchTransfer={matchTransfer}
                       onDelete={deleteTxn}
+                      onUpdate={updateTxn}
                       rules={rules}
                       onApplyRules={applyAllRules}
                     />
