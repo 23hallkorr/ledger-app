@@ -2868,12 +2868,11 @@ export default function FinanceApp() {
     pnl:reportNames.pnl, balance:reportNames.balance, cashflow:reportNames.cashflow,
   };
 
-  // ── Persist to localStorage ───────────────────────────────────────────────
+  // ── Load from server on startup ──────────────────────────────────────────
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("ledger_data");
-      if (saved) {
-        const d = JSON.parse(saved);
+    fetch(`${API}/api/data`)
+      .then(r => r.json())
+      .then(d => {
         if (d.transactions)    setTransactions(d.transactions);
         if (d.accounts)        setAccounts(d.accounts);
         if (d.sources)         setSources(d.sources);
@@ -2886,55 +2885,33 @@ export default function FinanceApp() {
         if (d.themeName)       setThemeName(d.themeName);
         if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
         if (d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
-      }
-    } catch(e) { console.warn("Could not load saved data:", e); }
+      })
+      .catch(e => {
+        console.warn("Could not load from server, falling back to localStorage:", e);
+        try {
+          const saved = localStorage.getItem("ledger_data");
+          if (saved) {
+            const d = JSON.parse(saved);
+            if (d.transactions)    setTransactions(d.transactions);
+            if (d.accounts)        setAccounts(d.accounts);
+            if (d.sources)         setSources(d.sources);
+            if (d.rules)           setRules(d.rules);
+            if (d.manualJEs)       setManualJEs(d.manualJEs);
+            if (d.accountOrder)    setAccountOrder(d.accountOrder);
+            if (d.reportNames)     setReportNames(d.reportNames);
+            if (d.reconciliations) setReconciliations(d.reconciliations);
+            if (d.customTheme)     setCustomTheme(d.customTheme);
+            if (d.themeName)       setThemeName(d.themeName);
+            if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
+            if (d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
+          }
+        } catch(le) { console.warn("localStorage fallback also failed:", le); }
+      });
   }, []);
 
+  // ── Save to server (debounced 1s) + localStorage backup ──────────────────
   useEffect(() => {
-    try {
-      localStorage.setItem("ledger_data", JSON.stringify({
-        transactions,
-        accounts,
-        sources,
-        rules,
-        manualJEs,
-        accountOrder,
-        reportNames,
-        reconciliations,
-        customTheme,
-        themeName,
-        showCoaInactive,
-        excludedTxns: [...excludedTxns],
-      }));
-    } catch(e) { console.warn("Could not save data:", e); }
-    // debounce 800ms
-  }, [transactions, accounts, sources, rules, manualJEs, accountOrder,
-      reportNames, reconciliations, customTheme, themeName, showCoaInactive, excludedTxns]);
-  // Load all data from server on startup
-  useEffect(() => {
-  try {
-    const saved = localStorage.getItem("ledger_data");
-    if (saved) {
-      const d = JSON.parse(saved);
-      if (d.transactions)    setTransactions(d.transactions);
-      if (d.accounts)        setAccounts(d.accounts);
-      if (d.sources)         setSources(d.sources);
-      if (d.rules)           setRules(d.rules);
-      if (d.manualJEs)       setManualJEs(d.manualJEs);
-      if (d.accountOrder)    setAccountOrder(d.accountOrder);
-      if (d.reportNames)     setReportNames(d.reportNames);
-      if (d.reconciliations) setReconciliations(d.reconciliations);
-      if (d.customTheme)     setCustomTheme(d.customTheme);
-      if (d.themeName)       setThemeName(d.themeName);
-      if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
-      if (d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
-    }
-  } catch(e) { console.warn("Could not load saved data:", e); }
-}, []);
-  // Save to server whenever data changes (debounced 1 second)
-  useEffect(() => {
-  try {
-    localStorage.setItem("ledger_data", JSON.stringify({
+    const payload = {
       transactions,
       accounts,
       sources,
@@ -2947,10 +2924,20 @@ export default function FinanceApp() {
       themeName,
       showCoaInactive,
       excludedTxns: [...excludedTxns],
-    }));
-  } catch(e) { console.warn("Could not save data:", e); }
-}, [transactions, accounts, sources, rules, manualJEs, accountOrder,
-    reportNames, reconciliations, customTheme, themeName, showCoaInactive, excludedTxns]);
+    };
+    // Always keep localStorage as a backup
+    try { localStorage.setItem("ledger_data", JSON.stringify(payload)); } catch(e) {}
+    // Debounce server save by 1 second
+    const tid = setTimeout(() => {
+      fetch(`${API}/api/data`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).catch(e => console.warn("Could not save to server:", e));
+    }, 1000);
+    return () => clearTimeout(tid);
+  }, [transactions, accounts, sources, rules, manualJEs, accountOrder,
+      reportNames, reconciliations, customTheme, themeName, showCoaInactive, excludedTxns]);
   // Ensure correct viewport on mobile
   useEffect(() => {
     let meta = document.querySelector('meta[name="viewport"]');
