@@ -8,27 +8,20 @@ app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/data  — load everything from the DB
+// GET /api/data
 // ─────────────────────────────────────────────────────────────────────────────
 app.get("/api/data", async (req, res) => {
   try {
-    const [
-      transactions,
-      accounts,
-      sources,
-      rules,
-      manualJEs,
-      reconciliationRows,
-      settings,
-    ] = await Promise.all([
-      prisma.transaction.findMany(),
-      prisma.account.findMany({ orderBy: { sortOrder: "asc" } }),
-      prisma.source.findMany(),
-      prisma.rule.findMany(),
-      prisma.manualJE.findMany(),
-      prisma.reconciliation.findMany(),
-      prisma.setting.findMany(),
-    ]);
+    const [transactions, accounts, sources, rules, manualJEs, reconciliationRows, settings] =
+      await Promise.all([
+        prisma.transaction.findMany(),
+        prisma.account.findMany({ orderBy: { sortOrder: "asc" } }),
+        prisma.source.findMany(),
+        prisma.rule.findMany(),
+        prisma.manualJE.findMany(),
+        prisma.reconciliation.findMany(),
+        prisma.setting.findMany(),
+      ]);
 
     const reconciliations = {};
     reconciliationRows.forEach(r => {
@@ -36,42 +29,30 @@ app.get("/api/data", async (req, res) => {
     });
 
     const excludedTxns = transactions.filter(t => t.excluded).map(t => t.id);
-
     const settingMap = {};
     settings.forEach(s => { settingMap[s.key] = s.value; });
 
     res.json({
       transactions: transactions.map(t => ({
-        id:              t.id,
-        date:            t.date,
-        description:     t.description,
-        amount:          t.amount,
-        accountId:       t.accountId       ?? null,
-        sourceId:        t.sourceId        ?? null,
-        transferMatchId: t.transferMatchId ?? null,
-        reconciled:      t.reconciled,
-        splits:          t.splits          ?? null,
+        id: t.id, date: t.date, description: t.description, amount: t.amount,
+        accountId: t.accountId ?? null, sourceId: t.sourceId ?? null,
+        transferMatchId: t.transferMatchId ?? null, reconciled: t.reconciled,
+        splits: t.splits ?? null,
       })),
       accounts: accounts.map(a => ({
-        id:         a.id,
-        name:       a.name,
-        type:       a.type,
-        cashFlow:   a.cashFlow   ?? null,
-        isBankFeed: a.isBankFeed,
-        parentId:   a.parentId   ?? null,
-        inactive:   a.inactive,
+        id: a.id, name: a.name, type: a.type, cashFlow: a.cashFlow ?? null,
+        isBankFeed: a.isBankFeed, parentId: a.parentId ?? null, inactive: a.inactive,
       })),
       sources:         sources.map(s => ({ id: s.id, name: s.name })),
       rules:           rules.map(r => ({ id: r.id, pattern: r.pattern, matchType: r.matchType, accountId: r.accountId })),
       manualJEs:       manualJEs.map(je => ({ id: je.id, date: je.date, memo: je.memo, lines: je.lines })),
-      reconciliations,
-      excludedTxns,
-      accountOrder:       settingMap["accountOrder"]       ?? null,
-      reportNames:        settingMap["reportNames"]        ?? null,
-      customTheme:        settingMap["customTheme"]        ?? null,
-      customReportTheme:  settingMap["customReportTheme"]  ?? null,
-      themeName:          settingMap["themeName"]          ?? null,
-      showCoaInactive:    settingMap["showCoaInactive"]    ?? false,
+      reconciliations, excludedTxns,
+      accountOrder:      settingMap["accountOrder"]      ?? null,
+      reportNames:       settingMap["reportNames"]       ?? null,
+      customTheme:       settingMap["customTheme"]       ?? null,
+      customReportTheme: settingMap["customReportTheme"] ?? null,
+      themeName:         settingMap["themeName"]         ?? null,
+      showCoaInactive:   settingMap["showCoaInactive"]   ?? false,
     });
   } catch (e) {
     console.error("GET /api/data error:", e);
@@ -80,24 +61,21 @@ app.get("/api/data", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/data  — save everything to the DB
+// POST /api/data — only saves if payload has real data (prevents empty wipes)
 // ─────────────────────────────────────────────────────────────────────────────
 app.post("/api/data", async (req, res) => {
   const {
-    transactions   = [],
-    accounts       = [],
-    sources        = [],
-    rules          = [],
-    manualJEs      = [],
-    reconciliations = {},
-    excludedTxns   = [],
-    accountOrder,
-    reportNames,
-    customTheme,
-    customReportTheme,
-    themeName,
-    showCoaInactive,
+    transactions = [], accounts = [], sources = [], rules = [], manualJEs = [],
+    reconciliations = {}, excludedTxns = [],
+    accountOrder, reportNames, customTheme, customReportTheme, themeName, showCoaInactive,
   } = req.body;
+
+  // Safety check — refuse to wipe the database with an empty payload
+  // Require at least accounts OR transactions to be non-empty before saving
+  if (transactions.length === 0 && accounts.length === 0) {
+    console.warn("POST /api/data: refusing empty payload to protect existing data");
+    return res.json({ ok: true, skipped: true });
+  }
 
   try {
     const excludedSet = new Set(excludedTxns);
@@ -112,16 +90,11 @@ app.post("/api/data", async (req, res) => {
     for (const t of transactions) {
       await prisma.transaction.create({
         data: {
-          id:              t.id,
-          date:            t.date            || "",
-          description:     t.description     || "",
-          amount:          t.amount          ?? 0,
-          accountId:       t.accountId       ?? null,
-          sourceId:        t.sourceId        ?? null,
-          transferMatchId: t.transferMatchId ?? null,
-          reconciled:      t.reconciled      ?? false,
-          excluded:        excludedSet.has(t.id),
-          splits:          t.splits          ?? undefined,
+          id: t.id, date: t.date || "", description: t.description || "",
+          amount: t.amount ?? 0, accountId: t.accountId ?? null,
+          sourceId: t.sourceId ?? null, transferMatchId: t.transferMatchId ?? null,
+          reconciled: t.reconciled ?? false, excluded: excludedSet.has(t.id),
+          splits: t.splits ?? undefined,
         },
       });
     }
@@ -130,14 +103,10 @@ app.post("/api/data", async (req, res) => {
       const a = accounts[idx];
       await prisma.account.create({
         data: {
-          id:         a.id,
-          name:       a.name,
-          type:       a.type,
-          cashFlow:   a.cashFlow   ?? null,
-          isBankFeed: a.isBankFeed ?? false,
-          parentId:   a.parentId   ?? null,
-          inactive:   a.inactive   ?? false,
-          sortOrder:  accountOrder
+          id: a.id, name: a.name, type: a.type, cashFlow: a.cashFlow ?? null,
+          isBankFeed: a.isBankFeed ?? false, parentId: a.parentId ?? null,
+          inactive: a.inactive ?? false,
+          sortOrder: accountOrder
             ? (accountOrder.indexOf(a.id) >= 0 ? accountOrder.indexOf(a.id) : idx)
             : idx,
         },
@@ -166,20 +135,18 @@ app.post("/api/data", async (req, res) => {
       });
     }
 
-    const upsertSetting = async (key, value) => {
+    const upsert = async (key, value) => {
       await prisma.setting.upsert({
-        where:  { key },
-        update: { value: value ?? null },
-        create: { key, value: value ?? null },
+        where: { key }, update: { value: value ?? null }, create: { key, value: value ?? null },
       });
     };
 
-    await upsertSetting("accountOrder",      accountOrder);
-    await upsertSetting("reportNames",       reportNames);
-    await upsertSetting("customTheme",       customTheme);
-    await upsertSetting("customReportTheme", customReportTheme);
-    await upsertSetting("themeName",         themeName);
-    await upsertSetting("showCoaInactive",   showCoaInactive);
+    await upsert("accountOrder",      accountOrder);
+    await upsert("reportNames",       reportNames);
+    await upsert("customTheme",       customTheme);
+    await upsert("customReportTheme", customReportTheme);
+    await upsert("themeName",         themeName);
+    await upsert("showCoaInactive",   showCoaInactive);
 
     res.json({ ok: true });
   } catch (e) {
