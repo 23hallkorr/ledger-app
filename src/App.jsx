@@ -649,7 +649,7 @@ const DEFAULT_ACCOUNTS = [
   {id:"2001",name:"Credit Card",       type:"Liability",cashFlow:"Financing",  isDefault:true, isBankFeed:true},
   {id:"3001",name:"Owner Equity",      type:"Equity",   cashFlow:null,         isDefault:true},
   {id:"4001",name:"Income / Salary",   type:"Revenue",  cashFlow:"Operating",  isDefault:true},
-  {id:"5001",name:"Rent / Housing",    type:"Expense",  cashFlow:"Operating",  isDefault:true},
+  {id:"5001",name:"Rent Expense",    type:"Expense",  cashFlow:"Operating",  isDefault:true},
   {id:"5002",name:"Groceries",         type:"Expense",  cashFlow:"Operating",  isDefault:true},
   {id:"5003",name:"Utilities",         type:"Expense",  cashFlow:"Operating",  isDefault:true},
   {id:"5004",name:"Transportation",    type:"Expense",  cashFlow:"Operating",  isDefault:true},
