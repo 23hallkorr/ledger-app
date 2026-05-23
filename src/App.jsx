@@ -2952,6 +2952,7 @@ export default function FinanceApp() {
   const [customTheme,     setCustomTheme]     = useState(null);
   const [showThemeEditor, setShowThemeEditor] = useState(false);
   const [customReportTheme,     setCustomReportTheme]     = useState({...DEFAULT_REPORT_THEME});
+  const [dataLoaded,            setDataLoaded]            = useState(false);
   const [splitTxn,        setSplitTxn]        = useState(null);   // transaction being split
   const [globalSearch,    setGlobalSearch]    = useState("");
   const [showSearch,      setShowSearch]      = useState(false);
@@ -3286,6 +3287,7 @@ export default function FinanceApp() {
       if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
       if (d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
       if (d.customReportTheme) setCustomReportTheme(d.customReportTheme);
+      setDataLoaded(true);
     };
     fetch(`${API}/api/data`)
       .then(r => r.json())
@@ -3294,12 +3296,14 @@ export default function FinanceApp() {
         try {
           const saved = localStorage.getItem("ledger_data");
           if (saved) applyData(JSON.parse(saved));
-        } catch(e) { console.warn("Could not load saved data:", e); }
+          else setDataLoaded(true);
+        } catch(e) { setDataLoaded(true); console.warn("Could not load saved data:", e); }
       });
   }, []);
 
   // ── Save to server (debounced 1s) + localStorage backup ──────────────────
   useEffect(() => {
+    if (!dataLoaded) return; // don't save until data has been loaded
     const payload = {
       transactions, accounts, sources, rules, manualJEs,
       accountOrder, reportNames, reconciliations, customTheme,
@@ -3315,7 +3319,7 @@ export default function FinanceApp() {
       }).catch(e => console.warn("Could not save to server:", e));
     }, 1000);
     return () => clearTimeout(tid);
-  }, [transactions, accounts, sources, rules, manualJEs, accountOrder,
+  }, [dataLoaded, transactions, accounts, sources, rules, manualJEs, accountOrder,
       reportNames, reconciliations, customTheme, themeName, showCoaInactive, excludedTxns, customReportTheme]);
   // Close search on outside click
   useEffect(()=>{
