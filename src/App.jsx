@@ -2231,7 +2231,8 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onCl
 // ─────────────────────────────────────────────────────────────────────────────
 // TREND REPORT
 // ─────────────────────────────────────────────────────────────────────────────
-function TrendReport({ type, accounts, transactions, excludedTxns, startDate, endDate, period, onDrill }) {
+function TrendReport({ type, accounts, transactions, excludedTxns, startDate, endDate, period, onDrill, rTheme }) {
+  const rt = rTheme || DEFAULT_REPORT_THEME;
   const acctById = Object.fromEntries(accounts.map(a=>[a.id,a]));
 
   const txns = useMemo(()=>
@@ -2266,9 +2267,9 @@ function TrendReport({ type, accounts, transactions, excludedTxns, startDate, en
   const grpCol=(accts,p)=>accts.reduce((s,a)=>s+col(a.id,p),0);
   const grpTotal=(accts)=>periods.reduce((s,p)=>s+grpCol(accts,p),0);
 
-  const C=({n,neg})=>{
-    const cls=n>0?(neg?"neg":"pos"):n<0?(neg?"pos":"neg"):"";
-    return <td className={cls}>{n!==0?fmt(Math.abs(n)):""}</td>;
+  const C=({n,neg,rt:r})=>{
+    const color = n>0?(neg?(r||rt).neg:(r||rt).pos):n<0?(neg?(r||rt).pos:(r||rt).neg):(r||rt).rowText;
+    return <td style={{color,borderColor:(r||rt).border}}>{n!==0?fmt(Math.abs(n)):""}</td>;
   };
 
   const groups = type==="pnl"
@@ -2281,40 +2282,42 @@ function TrendReport({ type, accounts, transactions, excludedTxns, startDate, en
   if(periods.length===0) return <div className="empty"><div className="empty-icon">📊</div><div className="empty-title">No data in selected range</div></div>;
 
   return (
-    <div className="trend-wrap">
-      <table className="trend-table">
+    <div className="trend-wrap" style={{borderColor:rt.border}}>
+      <table className="trend-table" style={{background:rt.bg}}>
         <thead>
           <tr>
-            <th style={{textAlign:"left"}}>Account</th>
-            {periods.map(p=><th key={p}>{formatPeriodKey(p,period)}</th>)}
-            <th>Total</th>
+            <th style={{textAlign:"left",background:rt.subtotalBg,color:rt.subtotalText,borderColor:rt.border}}>Account</th>
+            {periods.map(p=><th key={p} style={{background:rt.subtotalBg,color:rt.subtotalText,borderColor:rt.border}}>{formatPeriodKey(p,period)}</th>)}
+            <th style={{background:rt.subtotalBg,color:rt.subtotalText,borderColor:rt.border}}>Total</th>
           </tr>
         </thead>
         <tbody>
           {groups.map(g=>(
             <React.Fragment key={g.lbl}>
-              <tr className="trend-group"><td colSpan={periods.length+2}>{g.lbl}</td></tr>
+              <tr className="trend-group" style={{background:rt.sectionBg}}>
+                <td colSpan={periods.length+2} style={{color:rt.sectionText,borderColor:rt.border}}>{g.lbl}</td>
+              </tr>
               {g.accts.map(a=>(
-                <tr key={a.id} className="trend-indent" style={{cursor:"pointer"}} onClick={()=>onDrill&&onDrill(a)}>
-                  <td>{a.name}</td>
-                  {periods.map(p=><C key={p} n={col(a.id,p)} neg={g.neg}/>)}
-                  <C n={rowTotal(a.id)} neg={g.neg}/>
+                <tr key={a.id} className="trend-indent" style={{cursor:"pointer",background:rt.bg}} onClick={()=>onDrill&&onDrill(a)}>
+                  <td style={{color:rt.rowText,borderColor:rt.border}}>{a.name}</td>
+                  {periods.map(p=><C key={p} n={col(a.id,p)} neg={g.neg} rt={rt}/>)}
+                  <C n={rowTotal(a.id)} neg={g.neg} rt={rt}/>
                 </tr>
               ))}
-              <tr className="trend-total">
-                <td>{g.tot}</td>
-                {periods.map(p=><C key={p} n={grpCol(g.accts,p)} neg={g.neg}/>)}
-                <C n={grpTotal(g.accts)} neg={g.neg}/>
+              <tr className="trend-total" style={{background:rt.subtotalBg}}>
+                <td style={{color:rt.subtotalText,borderColor:rt.border}}>{g.tot}</td>
+                {periods.map(p=><C key={p} n={grpCol(g.accts,p)} neg={g.neg} rt={rt}/>)}
+                <C n={grpTotal(g.accts)} neg={g.neg} rt={rt}/>
               </tr>
             </React.Fragment>
           ))}
           {type==="pnl"&&(()=>{
             const [rev,exp]=groups;
             return (
-              <tr className="trend-grand">
-                <td>Net Income</td>
-                {periods.map(p=>{const ni=grpCol(rev.accts,p)-grpCol(exp.accts,p);return <td key={p} className={ni>=0?"pos":"neg"}>{fmt(ni)}</td>;})}
-                {(()=>{const ni=grpTotal(rev.accts)-grpTotal(exp.accts);return <td className={ni>=0?"pos":"neg"}>{fmt(ni)}</td>;})()}
+              <tr className="trend-grand" style={{background:rt.grandBg}}>
+                <td style={{color:rt.grandText,borderColor:rt.border}}>Net Income</td>
+                {periods.map(p=>{const ni=grpCol(rev.accts,p)-grpCol(exp.accts,p);return <td key={p} style={{color:ni>=0?rt.pos:rt.neg,borderColor:rt.border}}>{fmt(ni)}</td>;})}
+                {(()=>{const ni=grpTotal(rev.accts)-grpTotal(exp.accts);return <td style={{color:ni>=0?rt.pos:rt.neg,borderColor:rt.border}}>{fmt(ni)}</td>;})()}
               </tr>
             );
           })()}
@@ -2948,7 +2951,7 @@ export default function FinanceApp() {
   const [reconAccount,    setReconAccount]    = useState(null);
   const [customTheme,     setCustomTheme]     = useState(null);
   const [showThemeEditor, setShowThemeEditor] = useState(false);
-  const [customReportTheme,     setCustomReportTheme]     = useState(null);
+  const [customReportTheme,     setCustomReportTheme]     = useState({...DEFAULT_REPORT_THEME});
   const [splitTxn,        setSplitTxn]        = useState(null);   // transaction being split
   const [globalSearch,    setGlobalSearch]    = useState("");
   const [showSearch,      setShowSearch]      = useState(false);
@@ -3492,7 +3495,7 @@ export default function FinanceApp() {
             <button className="btn btn-ghost" style={{fontSize:11,padding:"3px 10px",flex:1}} onClick={()=>setShowReportThemeEditor(true)}>
               {customReportTheme?"Custom ✎":"Customise…"}
             </button>
-            {customReportTheme && <button className="btn btn-ghost" style={{fontSize:11,padding:"3px 8px",color:"var(--text3)"}} onClick={()=>setCustomReportTheme(null)} title="Reset report theme">✕</button>}
+            {customReportTheme && <button className="btn btn-ghost" style={{fontSize:11,padding:"3px 8px",color:"var(--text3)"}} onClick={()=>setCustomReportTheme({...DEFAULT_REPORT_THEME})} title="Reset report theme">✕</button>}
           </div>
         </aside>
 
@@ -3884,7 +3887,7 @@ export default function FinanceApp() {
                 ) : (
                   <TrendReport type="pnl" accounts={accounts} transactions={transactions}
                     excludedTxns={excludedTxns} startDate={startDate} endDate={endDate}
-                    period={trendPeriod} onDrill={setDrillAccount}/>
+                    period={trendPeriod} onDrill={setDrillAccount} rTheme={rTheme}/>
                 )}
               </>
             )}
@@ -3966,7 +3969,7 @@ export default function FinanceApp() {
                 ) : (
                   <TrendReport type="balance" accounts={accounts} transactions={transactions}
                     excludedTxns={excludedTxns} startDate={startDate} endDate={endDate}
-                    period={trendPeriod} onDrill={setDrillAccount}/>
+                    period={trendPeriod} onDrill={setDrillAccount} rTheme={rTheme}/>
                 )}
               </>
             )}
@@ -4058,7 +4061,7 @@ export default function FinanceApp() {
         onSave={t=>{ if(t){setCustomTheme(t);setThemeName("Custom");}else{setCustomTheme(null);setThemeName("Obsidian");} }}
         onClose={()=>setShowThemeEditor(false)}/>}
       {showReportThemeEditor && <ReportThemeModal currentTheme={customReportTheme}
-        onSave={t=>{ setCustomReportTheme(t||null); }}
+        onSave={t=>{ setCustomReportTheme(t || {...DEFAULT_REPORT_THEME}); }}
         onClose={()=>setShowReportThemeEditor(false)}/>}
       {splitTxn && <SplitModal transaction={splitTxn} accounts={activeAccounts}
         onSave={saveSplit} onClose={()=>setSplitTxn(null)}/>}
