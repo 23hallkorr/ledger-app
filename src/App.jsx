@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 
+const API = "ledger-app-production-6224.up.railway.app"; // ← replace with your Railway URL
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STYLES
@@ -3256,39 +3258,51 @@ export default function FinanceApp() {
     pnl:reportNames.pnl, balance:reportNames.balance, cashflow:reportNames.cashflow,
   };
 
-  // ── Load from localStorage on startup ────────────────────────────────────
+  // ── Load from server on startup, fall back to localStorage ──────────────
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("ledger_data");
-      if (saved) {
-        const d = JSON.parse(saved);
-        if (d.transactions)    setTransactions(d.transactions);
-        if (d.accounts)        setAccounts(d.accounts);
-        if (d.sources)         setSources(d.sources);
-        if (d.rules)           setRules(d.rules);
-        if (d.manualJEs)       setManualJEs(d.manualJEs);
-        if (d.accountOrder)    setAccountOrder(d.accountOrder);
-        if (d.reportNames)     setReportNames(d.reportNames);
-        if (d.reconciliations) setReconciliations(d.reconciliations);
-        if (d.customTheme)     setCustomTheme(d.customTheme);
-        if (d.themeName)       setThemeName(d.themeName);
-        if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
-        if (d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
-        if (d.customReportTheme) setCustomReportTheme(d.customReportTheme);
-      }
-    } catch(e) { console.warn("Could not load saved data:", e); }
+    const applyData = (d) => {
+      if (d.transactions)    setTransactions(d.transactions);
+      if (d.accounts)        setAccounts(d.accounts);
+      if (d.sources)         setSources(d.sources);
+      if (d.rules)           setRules(d.rules);
+      if (d.manualJEs)       setManualJEs(d.manualJEs);
+      if (d.accountOrder)    setAccountOrder(d.accountOrder);
+      if (d.reportNames)     setReportNames(d.reportNames);
+      if (d.reconciliations) setReconciliations(d.reconciliations);
+      if (d.customTheme)     setCustomTheme(d.customTheme);
+      if (d.themeName)       setThemeName(d.themeName);
+      if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
+      if (d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
+      if (d.customReportTheme) setCustomReportTheme(d.customReportTheme);
+    };
+    fetch(`${API}/api/data`)
+      .then(r => r.json())
+      .then(d => applyData(d))
+      .catch(() => {
+        try {
+          const saved = localStorage.getItem("ledger_data");
+          if (saved) applyData(JSON.parse(saved));
+        } catch(e) { console.warn("Could not load saved data:", e); }
+      });
   }, []);
 
-  // ── Save to localStorage on every change ─────────────────────────────────
+  // ── Save to server (debounced 1s) + localStorage backup ──────────────────
   useEffect(() => {
-    try {
-      localStorage.setItem("ledger_data", JSON.stringify({
-        transactions, accounts, sources, rules, manualJEs,
-        accountOrder, reportNames, reconciliations, customTheme,
-        themeName, showCoaInactive, excludedTxns: [...excludedTxns],
-        customReportTheme,
-      }));
-    } catch(e) { console.warn("Could not save data:", e); }
+    const payload = {
+      transactions, accounts, sources, rules, manualJEs,
+      accountOrder, reportNames, reconciliations, customTheme,
+      themeName, showCoaInactive, excludedTxns: [...excludedTxns],
+      customReportTheme,
+    };
+    try { localStorage.setItem("ledger_data", JSON.stringify(payload)); } catch(e) {}
+    const tid = setTimeout(() => {
+      fetch(`${API}/api/data`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).catch(e => console.warn("Could not save to server:", e));
+    }, 1000);
+    return () => clearTimeout(tid);
   }, [transactions, accounts, sources, rules, manualJEs, accountOrder,
       reportNames, reconciliations, customTheme, themeName, showCoaInactive, excludedTxns, customReportTheme]);
   // Close search on outside click
