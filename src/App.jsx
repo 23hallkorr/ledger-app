@@ -1344,8 +1344,13 @@ function AccountModal({ account, accounts, onSave, onClose }) {
   const [form, setForm] = useState(account||{id:"",name:"",type:"Expense",cashFlow:"Operating",isBankFeed:false,parentId:"",inactive:false});
   const s = (k,v) => setForm(p=>({...p,[k]:v}));
   const showFeed = form.type==="Asset" || form.type==="Liability";
-  // Only allow parents of the same type, excluding self
-  const parentCandidates = (accounts||[]).filter(a=>a.type===form.type && a.id !== form.id && !a.parentId);
+  // Only allow parents of the same type, excluding self and descendants (to avoid cycles)
+  const getDescendants = (id, accts) => {
+    const children = accts.filter(a => a.parentId === id);
+    return children.flatMap(c => [c.id, ...getDescendants(c.id, accts)]);
+  };
+  const excluded = new Set([form.id, ...getDescendants(form.id, accounts||[])]);
+  const parentCandidates = (accounts||[]).filter(a => a.type === form.type && !excluded.has(a.id));
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
@@ -1361,7 +1366,13 @@ function AccountModal({ account, accounts, onSave, onClose }) {
         <div className="field"><label>Parent Account <span style={{fontSize:11,color:"var(--text3)"}}>— optional, creates a sub-account</span></label>
           <select value={form.parentId||""} onChange={e=>s("parentId",e.target.value||"")} style={{width:"100%",padding:"7px 11px"}}>
             <option value="">— None (top-level account) —</option>
-            {parentCandidates.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+            {parentCandidates.map(a=>{
+              // Build path label e.g. "Parent > Child"
+              const path = [];
+              let cur = a;
+              while(cur){ path.unshift(cur.name); cur = (accounts||[]).find(x=>x.id===cur.parentId); }
+              return <option key={a.id} value={a.id}>{path.join(" > ")}</option>;
+            })}
           </select>
         </div>
         <div className="field"><label>Cash Flow Category</label>
@@ -2102,7 +2113,7 @@ function TrendReport({ type, accounts, transactions, excludedTxns, startDate, en
        {lbl:"Expenses",accts:accounts.filter(a=>a.type==="Expense"),neg:true,tot:"Total Expenses"}]
     : [{lbl:"Assets",accts:accounts.filter(a=>a.type==="Asset"),neg:false,tot:"Total Assets"},
        {lbl:"Liabilities",accts:accounts.filter(a=>a.type==="Liability"),neg:true,tot:"Total Liabilities"},
-       {lbl:"Equity",accts:accounts.filter(a=>a.type==="Equity"),neg:false,tot:"Total Equity"}];
+       {lbl:"Net Worth",accts:accounts.filter(a=>a.type==="Equity"),neg:false,tot:"Total Net Worth"}];
 
   if(periods.length===0) return <div className="empty"><div className="empty-icon">📊</div><div className="empty-title">No data in selected range</div></div>;
 
@@ -2513,8 +2524,70 @@ function CustomThemeModal({ currentTheme, onSave, onClose }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// COA ACTIONS DROPDOWN MENU
+// REPORT THEME MODAL
 // ─────────────────────────────────────────────────────────────────────────────
+const DEFAULT_REPORT_THEME = {
+  bg:          "#ffffff",
+  headerBg:    "#ffffff",
+  headerText:  "#111111",
+  sectionBg:   "#ffffff",
+  sectionText: "#111111",
+  rowEven:     "#f9f9f9",
+  rowText:     "#222222",
+  subtotalBg:  "#f0f0f0",
+  subtotalText:"#111111",
+  grandBg:     "#e8e8e8",
+  grandText:   "#000000",
+  border:      "#cccccc",
+  pos:         "#15803d",
+  neg:         "#b91c1c",
+};
+
+function ReportThemeModal({ currentTheme, onSave, onClose }) {
+  const fields = [
+    {k:"bg",           label:"Report Background"},
+    {k:"headerBg",     label:"Header Background"},
+    {k:"headerText",   label:"Header Text"},
+    {k:"sectionBg",    label:"Section Background"},
+    {k:"sectionText",  label:"Section Text"},
+    {k:"rowEven",      label:"Row (Even) Background"},
+    {k:"rowText",      label:"Row Text"},
+    {k:"subtotalBg",   label:"Subtotal Background"},
+    {k:"subtotalText", label:"Subtotal Text"},
+    {k:"grandBg",      label:"Grand Total Background"},
+    {k:"grandText",    label:"Grand Total Text"},
+    {k:"border",       label:"Border Color"},
+    {k:"pos",          label:"Positive Value"},
+    {k:"neg",          label:"Negative Value"},
+  ];
+  const base = {...DEFAULT_REPORT_THEME, ...(currentTheme||{})};
+  const [draft, setDraft] = useState(base);
+  const set = (k,v) => setDraft(p=>({...p,[k]:v}));
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{width:540,maxWidth:"96vw"}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-title">Report Theme</div>
+        <p style={{fontSize:12,color:"var(--text3)",marginBottom:14}}>Customise the colours used on printed reports.</p>
+        <div className="theme-editor-grid">
+          {fields.map(f=>(
+            <div key={f.k} className="theme-swatch-input">
+              <input type="color" value={draft[f.k]||"#000000"} onChange={e=>set(f.k,e.target.value)}/>
+              <label>{f.label}</label>
+              <span style={{fontFamily:"DM Mono,monospace",fontSize:10,color:"var(--text3)",marginLeft:"auto"}}>{draft[f.k]}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-8 mt-14">
+          <button className="btn btn-ghost" style={{color:"var(--text3)"}} onClick={()=>{ onSave(null); onClose(); }}>Reset</button>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary ml-auto" onClick={()=>{ onSave(draft); onClose(); }}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function CoaActionsMenu({ account, isReconType, onEdit, onReconcile, onToggleInactive }) {
   const [open, setOpen]   = useState(false);
   const [pos,  setPos]    = useState({top:0,left:0});
@@ -2621,6 +2694,8 @@ export default function FinanceApp() {
   const [reconAccount,    setReconAccount]    = useState(null);
   const [customTheme,     setCustomTheme]     = useState(null);
   const [showThemeEditor, setShowThemeEditor] = useState(false);
+  const [customReportTheme,     setCustomReportTheme]     = useState(null);
+  const [showReportThemeEditor, setShowReportThemeEditor] = useState(false);
   const [reportNames,    setReportNames]   = useState({
     company: "My Company",
     pnl:     "Income Statement",
@@ -2861,6 +2936,26 @@ export default function FinanceApp() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   const theme = customTheme || THEMES[themeName] || THEMES["Obsidian"];
+  const rTheme = {...DEFAULT_REPORT_THEME, ...(customReportTheme||{})};
+
+  // Recursive tree renderer for reports
+  const renderAccountTree = (allAccounts, parentId, depth, posClass, negClass) => {
+    const children = allAccounts.filter(a => (a.parentId||"") === (parentId||"") && a.balance !== 0);
+    return children.flatMap(a => {
+      const subChildren = allAccounts.filter(c => c.parentId === a.id && c.balance !== 0);
+      const indent = depth * 14;
+      return [
+        <div key={a.id} className={`qb-row l${Math.min(depth+1,3)}${subChildren.length?" qb-parent-row":""}`}
+          style={{cursor:"pointer"}} onClick={()=>setDrillAccount(a)}>
+          <span className="qb-label" style={indent?{paddingLeft:indent}:{}}>
+            {depth>0?"└ ":""}{a.name}<span className="qb-hint">▸</span>
+          </span>
+          <span className={`qb-val${a.balance>0?` ${posClass}`:a.balance<0?` ${negClass}`:""}`}>{fmt(a.balance)}</span>
+        </div>,
+        ...renderAccountTree(allAccounts, a.id, depth+1, posClass, negClass),
+      ];
+    });
+  };
 
   const PAGE_LABELS = {
     import:"Import Data", classify:"Transactions", je:"Journal Entries",
@@ -2886,6 +2981,7 @@ export default function FinanceApp() {
         if (d.themeName)       setThemeName(d.themeName);
         if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
         if (d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
+        if (d.customReportTheme) setCustomReportTheme(d.customReportTheme);
       }
     } catch(e) { console.warn("Could not load saved data:", e); }
   }, []);
@@ -2897,53 +2993,11 @@ export default function FinanceApp() {
         transactions, accounts, sources, rules, manualJEs,
         accountOrder, reportNames, reconciliations, customTheme,
         themeName, showCoaInactive, excludedTxns: [...excludedTxns],
+        customReportTheme,
       }));
     } catch(e) { console.warn("Could not save data:", e); }
   }, [transactions, accounts, sources, rules, manualJEs, accountOrder,
-      reportNames, reconciliations, customTheme, themeName, showCoaInactive, excludedTxns]);
-
-  // ── Export all data to a JSON file ────────────────────────────────────────
-  const exportData = () => {
-    const payload = {
-      transactions, accounts, sources, rules, manualJEs,
-      accountOrder, reportNames, reconciliations, customTheme,
-      themeName, showCoaInactive, excludedTxns: [...excludedTxns],
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = `ledger-backup-${new Date().toISOString().slice(0,10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // ── Import data from a JSON file ─────────────────────────────────────────
-  const importData = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const d = JSON.parse(ev.target.result);
-        if (d.transactions)    setTransactions(d.transactions);
-        if (d.accounts)        setAccounts(d.accounts);
-        if (d.sources)         setSources(d.sources);
-        if (d.rules)           setRules(d.rules);
-        if (d.manualJEs)       setManualJEs(d.manualJEs);
-        if (d.accountOrder)    setAccountOrder(d.accountOrder);
-        if (d.reportNames)     setReportNames(d.reportNames);
-        if (d.reconciliations) setReconciliations(d.reconciliations);
-        if (d.customTheme)     setCustomTheme(d.customTheme);
-        if (d.themeName)       setThemeName(d.themeName);
-        if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
-        if (d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
-        alert("Data imported successfully!");
-      } catch(err) { alert("Could not read file. Make sure it's a valid ledger backup."); }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
-  };
+      reportNames, reconciliations, customTheme, themeName, showCoaInactive, excludedTxns, customReportTheme]);
   // Ensure correct viewport on mobile
   useEffect(() => {
     let meta = document.querySelector('meta[name="viewport"]');
@@ -2957,7 +3011,24 @@ export default function FinanceApp() {
 
   return (
     <>
-      <style>{themeVars(theme)}{styles}</style>
+      <style>{themeVars(theme)}{styles}{`
+        .qb-report{background:${rTheme.bg};border-color:${rTheme.border};}
+        .qb-header{background:${rTheme.headerBg};border-color:${rTheme.border};}
+        .qb-co{color:${rTheme.headerText};}
+        .qb-title{color:${rTheme.headerText};}
+        .qb-date{color:${rTheme.headerText};}
+        .qb-section{background:${rTheme.sectionBg};color:${rTheme.sectionText};}
+        .qb-subsection{background:${rTheme.sectionBg};color:${rTheme.sectionText};}
+        .qb-row{color:${rTheme.rowText};border-color:${rTheme.border};}
+        .qb-row:nth-child(even){background:${rTheme.rowEven};}
+        .qb-subtotal{background:${rTheme.subtotalBg};color:${rTheme.subtotalText};border-color:${rTheme.border};}
+        .qb-subtotal-label,.qb-subtotal-val{color:${rTheme.subtotalText};}
+        .qb-grand{background:${rTheme.grandBg};border-color:${rTheme.border};}
+        .qb-grand-label,.qb-grand-val{color:${rTheme.grandText};}
+        .qb-col-heads{background:${rTheme.subtotalBg};border-color:${rTheme.border};}
+        .qb-report .pos{color:${rTheme.pos};}
+        .qb-report .neg{color:${rTheme.neg};}
+      `}</style>
       <div className="app">
 
         {/* ── MOBILE HEADER ── */}
@@ -3031,21 +3102,63 @@ export default function FinanceApp() {
               <span style={{color:unclassifiedCount>0?"var(--amber)":"var(--green)"}}>{unclassifiedCount}</span> uncategorized
             </div>
             <div style={{display:"flex",gap:6,marginTop:10}}>
-              <button className="btn" style={{flex:1,fontSize:11,padding:"5px 0"}} onClick={exportData} title="Download a backup of all your data">⬇ Export</button>
+              <button className="btn" style={{flex:1,fontSize:11,padding:"5px 0"}} onClick={()=>{
+                const payload = {
+                  transactions, accounts, sources, rules, manualJEs,
+                  accountOrder, reportNames, reconciliations, customTheme,
+                  themeName, showCoaInactive, excludedTxns: [...excludedTxns],
+                  customReportTheme,
+                };
+                const blob = new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href=url; a.download=`ledger-backup-${new Date().toISOString().slice(0,10)}.json`;
+                a.click(); URL.revokeObjectURL(url);
+              }} title="Download a backup of all your data">⬇ Export</button>
               <label className="btn" style={{flex:1,fontSize:11,padding:"5px 0",textAlign:"center",cursor:"pointer"}} title="Restore from a previous backup">
                 ⬆ Import
-                <input type="file" accept=".json" style={{display:"none"}} onChange={importData}/>
+                <input type="file" accept=".json" style={{display:"none"}} onChange={e=>{
+                  const file=e.target.files[0]; if(!file) return;
+                  const reader=new FileReader();
+                  reader.onload=ev=>{
+                    try {
+                      const d=JSON.parse(ev.target.result);
+                      if(d.transactions)    setTransactions(d.transactions);
+                      if(d.accounts)        setAccounts(d.accounts);
+                      if(d.sources)         setSources(d.sources);
+                      if(d.rules)           setRules(d.rules);
+                      if(d.manualJEs)       setManualJEs(d.manualJEs);
+                      if(d.accountOrder)    setAccountOrder(d.accountOrder);
+                      if(d.reportNames)     setReportNames(d.reportNames);
+                      if(d.reconciliations) setReconciliations(d.reconciliations);
+                      if(d.customTheme)     setCustomTheme(d.customTheme);
+                      if(d.themeName)       setThemeName(d.themeName);
+                      if(d.showCoaInactive!==undefined) setShowCoaInactive(d.showCoaInactive);
+                      if(d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
+                      if(d.customReportTheme) setCustomReportTheme(d.customReportTheme);
+                      alert("Data imported successfully!");
+                    } catch(err){ alert("Could not read file. Make sure it's a valid ledger backup."); }
+                  };
+                  reader.readAsText(file); e.target.value="";
+                }}/>
               </label>
             </div>
           </div>
           <div className="theme-picker">
-            <span className="theme-label">Theme</span>
+            <span className="theme-label">App Theme</span>
             <select className="theme-select" value={customTheme?"Custom":themeName}
               onChange={e=>{ if(e.target.value==="Custom"){setShowThemeEditor(true);}else{setCustomTheme(null);setThemeName(e.target.value);} }}>
               {Object.keys(THEMES).map(t=><option key={t}>{t}</option>)}
               <option value="Custom">Custom…</option>
             </select>
             <div style={{width:14,height:14,borderRadius:"50%",background:theme.accent,cursor:"pointer",flexShrink:0,border:"1px solid var(--border2)"}} title="Edit colours" onClick={()=>setShowThemeEditor(true)}/>
+          </div>
+          <div className="theme-picker" style={{marginTop:4}}>
+            <span className="theme-label">Report Theme</span>
+            <button className="btn btn-ghost" style={{fontSize:11,padding:"3px 10px",flex:1}} onClick={()=>setShowReportThemeEditor(true)}>
+              {customReportTheme?"Custom ✎":"Customise…"}
+            </button>
+            {customReportTheme && <button className="btn btn-ghost" style={{fontSize:11,padding:"3px 8px",color:"var(--text3)"}} onClick={()=>setCustomReportTheme(null)} title="Reset report theme">✕</button>}
           </div>
         </aside>
 
@@ -3350,25 +3463,7 @@ export default function FinanceApp() {
                     <div className="qb-col-heads"><div className="qb-col-head">Total</div></div>
 
                     <div className="qb-section">Income</div>
-                    {(()=>{
-                      const parents = revenues.filter(a=>!a.parentId&&a.balance!==0);
-                      const orphans  = revenues.filter(a=>a.parentId&&!revenues.find(p=>p.id===a.parentId)&&a.balance!==0);
-                      return [...parents,...orphans].flatMap(a=>{
-                        const children = revenues.filter(c=>c.parentId===a.id&&c.balance!==0);
-                        return [
-                          <div key={a.id} className={`qb-row l1${children.length?" qb-parent-row":""}`} onClick={()=>setDrillAccount(a)}>
-                            <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
-                            <span className={`qb-val${a.balance>0?" pos":a.balance<0?" neg":""}`}>{fmt(a.balance)}</span>
-                          </div>,
-                          ...children.map(c=>(
-                            <div key={c.id} className="qb-row l2" onClick={()=>setDrillAccount(c)}>
-                              <span className="qb-label" style={{paddingLeft:16}}>└ {c.name}<span className="qb-hint">▸</span></span>
-                              <span className={`qb-val${c.balance>0?" pos":c.balance<0?" neg":""}`}>{fmt(c.balance)}</span>
-                            </div>
-                          )),
-                        ];
-                      });
-                    })()}
+                    {renderAccountTree(revenues, "", 0, "pos", "neg")}
                     {revenues.filter(a=>a.balance!==0).length===0&&(
                       <div className="qb-row l1 no-click"><span className="qb-label italic">No income recorded</span><span className="qb-val">—</span></div>
                     )}
@@ -3379,25 +3474,7 @@ export default function FinanceApp() {
 
                     <div className="qb-space"/>
                     <div className="qb-section">Expenses</div>
-                    {(()=>{
-                      const parents = expenses.filter(a=>!a.parentId&&a.balance!==0);
-                      const orphans  = expenses.filter(a=>a.parentId&&!expenses.find(p=>p.id===a.parentId)&&a.balance!==0);
-                      return [...parents,...orphans].flatMap(a=>{
-                        const children = expenses.filter(c=>c.parentId===a.id&&c.balance!==0);
-                        return [
-                          <div key={a.id} className={`qb-row l1${children.length?" qb-parent-row":""}`} onClick={()=>setDrillAccount(a)}>
-                            <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
-                            <span className={`qb-val${a.balance>0?" neg":""}`}>{fmt(a.balance)}</span>
-                          </div>,
-                          ...children.map(c=>(
-                            <div key={c.id} className="qb-row l2" onClick={()=>setDrillAccount(c)}>
-                              <span className="qb-label" style={{paddingLeft:16}}>└ {c.name}<span className="qb-hint">▸</span></span>
-                              <span className={`qb-val${c.balance>0?" neg":""}`}>{fmt(c.balance)}</span>
-                            </div>
-                          )),
-                        ];
-                      });
-                    })()}
+                    {renderAccountTree(expenses, "", 0, "neg", "pos")}
                     {expenses.filter(a=>a.balance!==0).length===0&&(
                       <div className="qb-row l1 no-click"><span className="qb-label italic">No expenses recorded</span><span className="qb-val">—</span></div>
                     )}
@@ -3459,30 +3536,7 @@ export default function FinanceApp() {
 
                     {/* ASSETS */}
                     <div className="qb-section">Assets</div>
-                    <div className="qb-subsection">Current Assets</div>
-                    {(()=>{
-                      const parents = assets.filter(a=>!a.parentId&&a.balance!==0);
-                      const orphans  = assets.filter(a=>a.parentId&&!assets.find(p=>p.id===a.parentId)&&a.balance!==0);
-                      return [...parents,...orphans].flatMap(a=>{
-                        const children = assets.filter(c=>c.parentId===a.id&&c.balance!==0);
-                        return [
-                          <div key={a.id} className={`qb-row l2${children.length?" qb-parent-row":""}`} onClick={()=>setDrillAccount(a)}>
-                            <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
-                            <span className={`qb-val${a.balance>0?" pos":a.balance<0?" neg":""}`}>{fmt(a.balance)}</span>
-                          </div>,
-                          ...children.map(c=>(
-                            <div key={c.id} className="qb-row l3" onClick={()=>setDrillAccount(c)}>
-                              <span className="qb-label" style={{paddingLeft:16}}>└ {c.name}<span className="qb-hint">▸</span></span>
-                              <span className={`qb-val${c.balance>0?" pos":c.balance<0?" neg":""}`}>{fmt(c.balance)}</span>
-                            </div>
-                          )),
-                        ];
-                      });
-                    })()}
-                    <div className="qb-subtotal l1">
-                      <span className="qb-subtotal-label">Total Current Assets</span>
-                      <span className={`qb-subtotal-val${totalAssets>0?" pos":""}`}>{fmt(totalAssets)}</span>
-                    </div>
+                    {renderAccountTree(assets, "", 0, "pos", "neg")}
                     <div className="qb-subtotal">
                       <span className="qb-subtotal-label" style={{fontWeight:700,textTransform:"uppercase",fontSize:12}}>Total Assets</span>
                       <span className={`qb-subtotal-val${totalAssets>0?" pos":""}`}>{fmt(totalAssets)}</span>
@@ -3490,63 +3544,30 @@ export default function FinanceApp() {
 
                     <div className="qb-space"/><div className="qb-space"/>
 
-                    {/* LIABILITIES & EQUITY */}
-                    <div className="qb-section">Liabilities &amp; Equity</div>
-                    <div className="qb-subsection">Liabilities</div>
-                    <div className="qb-row l2 no-click"><span className="qb-label italic" style={{color:"var(--text3)",fontSize:12}}>Current Liabilities</span></div>
-                    {liabilities.filter(a=>a.balance!==0&&!a.parentId).concat(liabilities.filter(a=>a.balance!==0&&a.parentId&&!liabilities.find(p=>p.id===a.parentId))).flatMap(a=>{
-                      const children=liabilities.filter(c=>c.parentId===a.id&&c.balance!==0);
-                      return [
-                        <div key={a.id} className={`qb-row l3${children.length?" qb-parent-row":""}`} onClick={()=>setDrillAccount(a)}>
-                          <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
-                          <span className={`qb-val${a.balance>0?" neg":""}`}>{fmt(a.balance)}</span>
-                        </div>,
-                        ...children.map(c=>(
-                          <div key={c.id} className="qb-row l3" style={{paddingLeft:32}} onClick={()=>setDrillAccount(c)}>
-                            <span className="qb-label" style={{paddingLeft:16}}>└ {c.name}<span className="qb-hint">▸</span></span>
-                            <span className={`qb-val${c.balance>0?" neg":""}`}>{fmt(c.balance)}</span>
-                          </div>
-                        )),
-                      ];
-                    })}
-                    <div className="qb-subtotal l2">
-                      <span className="qb-subtotal-label">Total Current Liabilities</span>
-                      <span className={`qb-subtotal-val${totalLiabilities>0?" neg":""}`}>{fmt(totalLiabilities)}</span>
-                    </div>
+                    {/* LIABILITIES & NET WORTH */}
+                    <div className="qb-section">Liabilities &amp; Net Worth</div>
+                    <div className="qb-section" style={{fontSize:11,fontWeight:600,paddingTop:4,paddingBottom:2}}>Liabilities</div>
+                    {renderAccountTree(liabilities, "", 0, "neg", "pos")}
                     <div className="qb-subtotal l1">
                       <span className="qb-subtotal-label">Total Liabilities</span>
                       <span className={`qb-subtotal-val${totalLiabilities>0?" neg":""}`}>{fmt(totalLiabilities)}</span>
                     </div>
 
                     <div className="qb-space"/>
-                    <div className="qb-subsection">Equity</div>
-                    {equity.filter(a=>a.balance!==0&&!a.parentId).concat(equity.filter(a=>a.balance!==0&&a.parentId&&!equity.find(p=>p.id===a.parentId))).flatMap(a=>{
-                      const children=equity.filter(c=>c.parentId===a.id&&c.balance!==0);
-                      return [
-                        <div key={a.id} className={`qb-row l2${children.length?" qb-parent-row":""}`} onClick={()=>setDrillAccount(a)}>
-                          <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
-                          <span className={`qb-val${a.balance>0?" pos":""}`}>{fmt(a.balance)}</span>
-                        </div>,
-                        ...children.map(c=>(
-                          <div key={c.id} className="qb-row l2" style={{paddingLeft:32}} onClick={()=>setDrillAccount(c)}>
-                            <span className="qb-label" style={{paddingLeft:16}}>└ {c.name}<span className="qb-hint">▸</span></span>
-                            <span className={`qb-val${c.balance>0?" pos":""}`}>{fmt(c.balance)}</span>
-                          </div>
-                        )),
-                      ];
-                    })}
+                    <div className="qb-section" style={{fontSize:11,fontWeight:600,paddingTop:4,paddingBottom:2}}>Net Worth</div>
+                    {renderAccountTree(equity, "", 0, "pos", "neg")}
                     <div className="qb-row l2 no-click">
                       <span className="qb-label">Net Income</span>
                       <span className={`qb-val${netIncome>=0?" pos":" neg"}`}>{fmt(netIncome)}</span>
                     </div>
                     <div className="qb-subtotal l1">
-                      <span className="qb-subtotal-label">Total Equity</span>
+                      <span className="qb-subtotal-label">Total Net Worth</span>
                       <span className="qb-subtotal-val">{fmt(totalEquity+netIncome)}</span>
                     </div>
 
                     <div className="qb-space"/>
                     <div className="qb-grand">
-                      <span className="qb-grand-label">Total Liabilities &amp; Equity</span>
+                      <span className="qb-grand-label">Total Liabilities &amp; Net Worth</span>
                       <span className="qb-grand-val">{fmt(totalLiabilities+totalEquity+netIncome)}</span>
                     </div>
                   </div>
@@ -3642,6 +3663,9 @@ export default function FinanceApp() {
       {showThemeEditor  && <CustomThemeModal currentTheme={theme}
         onSave={t=>{ if(t){setCustomTheme(t);setThemeName("Custom");}else{setCustomTheme(null);setThemeName("Obsidian");} }}
         onClose={()=>setShowThemeEditor(false)}/>}
+      {showReportThemeEditor && <ReportThemeModal currentTheme={customReportTheme}
+        onSave={t=>{ setCustomReportTheme(t||null); }}
+        onClose={()=>setShowReportThemeEditor(false)}/>}
       {drillAccount     && <DrillModal   account={drillAccount}  transactions={transactions} manualJEs={manualJEs} allAccounts={accounts} startDate={startDate} endDate={endDate} onClose={()=>setDrillAccount(null)} onUpdate={updateTxn} onDelete={deleteTxn} onExclude={(id)=>setExcludedTxns(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n;})} excludedTxns={excludedTxns}
         onEditJE={jeOrAction=>{
           if (jeOrAction?._delete) {
