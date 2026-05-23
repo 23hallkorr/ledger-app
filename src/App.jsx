@@ -31,7 +31,7 @@ const THEMES = {
     text:"#f2ede8",text2:"#9e8e82",text3:"#5c4e45",
     red:"#e05252",green:"#6dbf67",blue:"#6ab0d4",amber:"#f4a35a",purple:"#b994c8",
   },
-  "Forest": {
+  "Tree": {
     bg:"#0d120e",surface:"#141a14",surface2:"#1a231b",surface3:"#202b21",
     border:"#2a3a2b",border2:"#3a4e3c",
     accent:"#6fcf7e",accent2:"#4db85e",
