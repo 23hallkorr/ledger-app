@@ -1455,9 +1455,11 @@ function RuleModal({ rule, accounts, onSave, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function PreCatImportModal({ accounts, onImport, onClose }) {
   const bankAccts = accounts.filter(a=>a.type==="Asset"||a.type==="Liability");
+  const [step,     setStep]     = useState("upload");   // "upload" | "map" | "confirm"
   const [file,     setFile]     = useState(null);
-  const [preview,  setPreview]  = useState(null);
+  const [rows,     setRows]     = useState([]);          // parsed rows
   const [sourceId, setSourceId] = useState("");
+  const [mapping,  setMapping]  = useState({});          // catName → accountId
   const [error,    setError]    = useState("");
   const fileRef = useRef();
 
@@ -1471,10 +1473,9 @@ function PreCatImportModal({ accounts, onImport, onClose }) {
     const amtIdx  = idx(["amount","amt","value","debit"]);
     const catIdx  = idx(["category","account","cat","classification"]);
     if (dateIdx<0||descIdx<0||amtIdx<0) {
-      setError("Could not find date, description, or amount columns. Expected: date, description, amount, category");
-      return;
+      setError("Could not find date, description, or amount columns."); return;
     }
-    const rows = [];
+    const parsed = [];
     for (let i=1; i<lines.length; i++) {
       const parts = lines[i].match(/(".*?"|[^,]+)/g) || lines[i].split(",");
       const clean = parts.map(p=>p.replace(/^"|"$/g,"").trim());
@@ -1483,55 +1484,65 @@ function PreCatImportModal({ accounts, onImport, onClose }) {
       const rawAmt  = (clean[amtIdx]||"0").replace(/[$, ]/g,"");
       const amount  = parseFloat(rawAmt)||0;
       const catName = catIdx>=0 ? (clean[catIdx]||"").trim() : "";
-      const matched = catName ? accounts.find(a=>
-        a.name.toLowerCase()===catName.toLowerCase() ||
-        a.id.toLowerCase()===catName.toLowerCase()) : null;
-      // Normalise date to YYYY-MM-DD
       let normDate = date;
       if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(date)) {
         const [m,d,y] = date.split("/");
         normDate = `${y.length===2?"20"+y:y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
       }
-      rows.push({ date:normDate, desc, amount, catName, catId:matched?.id||"", matched });
+      parsed.push({ date:normDate, desc, amount, catName });
     }
-    setPreview(rows);
+    // Auto-match exact names
+    const initMapping = {};
+    const uniqueCats = [...new Set(parsed.map(r=>r.catName).filter(Boolean))];
+    uniqueCats.forEach(cat => {
+      const match = accounts.find(a =>
+        a.name.toLowerCase()===cat.toLowerCase() ||
+        a.id.toLowerCase()===cat.toLowerCase()
+      );
+      initMapping[cat] = match?.id || "";
+    });
+    setRows(parsed);
+    setMapping(initMapping);
     setError("");
   };
 
   const handleFile = (f) => {
-    setFile(f); setPreview(null); setError("");
+    setFile(f); setRows([]); setError("");
     const reader = new FileReader();
     reader.onload = e => parseCSV(e.target.result);
     reader.readAsText(f);
   };
 
-  const readyCount     = (preview||[]).filter(r=>r.catId).length;
-  const unmatchedCount = (preview||[]).filter(r=>!r.catId).length;
+  const uniqueCats = [...new Set(rows.map(r=>r.catName).filter(Boolean))];
+  const unmappedCats = uniqueCats.filter(c=>!mapping[c]);
+  const mappedRows = rows.filter(r=>r.catName && mapping[r.catName]);
+  const unmappedRows = rows.filter(r=>!r.catName || !mapping[r.catName]);
 
   const doImport = () => {
     if (!sourceId) { setError("Please select a bank account first."); return; }
-    const rows = (preview||[]).filter(r=>r.catId).map(r=>({
+    const toImport = mappedRows.map(r=>({
       id:          `precat-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       date:        r.date,
       description: r.desc,
       amount:      r.amount,
       sourceId,
-      accountId:   r.catId,
+      accountId:   mapping[r.catName],
     }));
-    onImport(rows);
+    onImport(toImport);
     onClose();
   };
 
-  return (
+  // ── STEP: UPLOAD ──
+  if (step==="upload") return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{width:620,maxWidth:"96vw",maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+      <div className="modal" style={{width:560,maxWidth:"96vw"}} onClick={e=>e.stopPropagation()}>
         <div className="modal-title">Import Pre-Categorized Transactions</div>
         <p style={{fontSize:12,color:"var(--text3)",marginBottom:14}}>
-          Upload a CSV that already has a category column. Rows with unmatched categories will be skipped.
+          Upload a CSV with a category column. You'll map any unrecognized categories on the next screen.
         </p>
         <div style={{background:"var(--surface2)",borderRadius:"var(--radius)",padding:"10px 14px",marginBottom:14,fontFamily:"DM Mono,monospace",fontSize:11,color:"var(--text3)"}}>
           Expected: <span style={{color:"var(--accent)"}}>date, description, amount, category</span><br/>
-          Example:&nbsp;&nbsp;2024-01-15, Grocery Store, -87.43, Groceries
+          Example:&nbsp;&nbsp;2024-01-15, Fuel Stop, -45.00, Fuel Expense
         </div>
         <div className="field" style={{marginBottom:12}}>
           <label>Bank / Credit Card Account (source)</label>
@@ -1550,53 +1561,98 @@ function PreCatImportModal({ accounts, onImport, onClose }) {
             onChange={e=>e.target.files[0]&&handleFile(e.target.files[0])}/>
         </div>
         {error&&<div style={{color:"var(--red)",fontSize:12,marginBottom:10}}>{error}</div>}
-        {preview&&preview.length>0&&(
-          <div style={{marginBottom:14}}>
-            <div style={{fontSize:12,color:"var(--text2)",marginBottom:8,display:"flex",gap:16}}>
-              <span style={{color:"var(--green)"}}>✓ {readyCount} ready to import</span>
-              {unmatchedCount>0&&<span style={{color:"var(--amber)"}}>⚠ {unmatchedCount} unmatched — will be skipped</span>}
-            </div>
-            <div style={{maxHeight:220,overflowY:"auto",border:"1px solid var(--border)",borderRadius:"var(--radius)"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead>
-                  <tr style={{background:"var(--surface2)"}}>
-                    {["Date","Description","Amount","Category"].map(h=>(
-                      <th key={h} style={{padding:"6px 10px",textAlign:h==="Amount"?"right":"left",color:"var(--text3)",fontFamily:"DM Mono,monospace",fontSize:10,textTransform:"uppercase"}}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.slice(0,50).map((r,i)=>(
-                    <tr key={i} style={{borderTop:"1px solid var(--border)",opacity:r.catId?1:.5}}>
-                      <td style={{padding:"5px 10px",fontFamily:"DM Mono,monospace",color:"var(--text3)",whiteSpace:"nowrap"}}>{r.date}</td>
-                      <td style={{padding:"5px 10px",color:"var(--text2)",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.desc}</td>
-                      <td style={{padding:"5px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",color:r.amount>=0?"var(--green)":"var(--red)"}}>{fmt(r.amount)}</td>
-                      <td style={{padding:"5px 10px"}}>
-                        {r.matched
-                          ? <span style={{color:"var(--green)"}}>{r.matched.name}</span>
-                          : <span style={{color:"var(--amber)"}}>⚠ {r.catName||"—"}</span>}
-                      </td>
-                    </tr>
-                  ))}
-                  {preview.length>50&&(
-                    <tr><td colSpan={4} style={{padding:"6px 10px",color:"var(--text3)",fontSize:11,textAlign:"center"}}>…and {preview.length-50} more rows</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+        {rows.length>0&&(
+          <div style={{fontSize:12,color:"var(--text2)",marginBottom:10,display:"flex",gap:16}}>
+            <span style={{color:"var(--green)"}}>✓ {rows.length} rows parsed</span>
+            <span style={{color:unmappedCats.length>0?"var(--amber)":"var(--green)"}}>{uniqueCats.length} unique categories</span>
           </div>
         )}
         <div className="flex gap-8 mt-14">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary ml-auto"
-            disabled={!file||readyCount===0||!sourceId}
-            onClick={doImport}>
-            Import {readyCount} Transaction{readyCount!==1?"s":""}
+            disabled={!file||rows.length===0||!sourceId}
+            onClick={()=>setStep("map")}>
+            Next: Map Categories →
           </button>
         </div>
       </div>
     </div>
   );
+
+  // ── STEP: MAP CATEGORIES ──
+  if (step==="map") return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{width:640,maxWidth:"96vw",maxHeight:"92vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-title">Map Categories to Accounts</div>
+        <p style={{fontSize:12,color:"var(--text3)",marginBottom:14}}>
+          Match each category from your CSV to an account in your Chart of Accounts.
+          Auto-matched categories are pre-filled — review and adjust as needed.
+        </p>
+        <div style={{border:"1px solid var(--border)",borderRadius:"var(--radius)",overflow:"hidden",marginBottom:16}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead>
+              <tr style={{background:"var(--surface2)"}}>
+                <th style={{padding:"8px 14px",textAlign:"left",fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase",letterSpacing:"1px",fontWeight:600}}>
+                  Category in CSV
+                </th>
+                <th style={{padding:"8px 14px",textAlign:"left",fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase",letterSpacing:"1px",fontWeight:600}}>
+                  Rows
+                </th>
+                <th style={{padding:"8px 14px",textAlign:"left",fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase",letterSpacing:"1px",fontWeight:600}}>
+                  Map to Account
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {uniqueCats.map((cat,i)=>{
+                const count = rows.filter(r=>r.catName===cat).length;
+                const mapped = !!mapping[cat];
+                return (
+                  <tr key={cat} style={{borderTop:"1px solid var(--border)",background:i%2===0?"":"var(--surface)"}}>
+                    <td style={{padding:"8px 14px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <span style={{width:8,height:8,borderRadius:"50%",background:mapped?"var(--green)":"var(--amber)",flexShrink:0,display:"inline-block"}}/>
+                        <span style={{color:"var(--text)",fontWeight:500}}>{cat}</span>
+                      </div>
+                    </td>
+                    <td style={{padding:"8px 14px",color:"var(--text3)",fontFamily:"DM Mono,monospace",fontSize:12}}>{count}</td>
+                    <td style={{padding:"8px 14px"}}>
+                      <select
+                        value={mapping[cat]||""}
+                        onChange={e=>setMapping(p=>({...p,[cat]:e.target.value}))}
+                        style={{width:"100%",padding:"5px 9px",background:"var(--surface2)",color:"var(--text)",border:"1px solid var(--border)",borderRadius:6,fontSize:12}}>
+                        <option value="">— Skip these transactions —</option>
+                        {ACCOUNT_TYPES.map(type=>(
+                          <optgroup key={type} label={type}>
+                            {accounts.filter(a=>a.type===type).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{fontSize:12,color:"var(--text2)",marginBottom:14,display:"flex",gap:16,flexWrap:"wrap"}}>
+          <span style={{color:"var(--green)"}}>✓ {mappedRows.length} transactions will be imported</span>
+          {unmappedRows.length>0&&<span style={{color:"var(--amber)"}}>⚠ {unmappedRows.length} will be skipped (unmapped)</span>}
+        </div>
+        <div className="flex gap-8 mt-14">
+          <button className="btn btn-ghost" onClick={()=>setStep("upload")}>← Back</button>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary ml-auto"
+            disabled={mappedRows.length===0}
+            onClick={doImport}>
+            Import {mappedRows.length} Transaction{mappedRows.length!==1?"s":""}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return null;
 }
 
 function BulkModal({ count, accounts, onApply, onClose }) {
@@ -3331,15 +3387,20 @@ export default function FinanceApp() {
                   if (visible.length===0) return null;
                   const inactiveCount = allOfType.filter(a=>a.inactive).length;
                   const isReconType   = type==="Asset" || type==="Liability";
-                  const parents = visible.filter(a=>!a.parentId);
-                  const tree = [];
-                  parents.forEach(p=>{
-                    tree.push({a:p, isChild:false});
-                    visible.filter(c=>c.parentId===p.id).forEach(c=>tree.push({a:c, isChild:true}));
-                  });
-                  visible.filter(a=>a.parentId&&!visible.find(p=>p.id===a.parentId)).forEach(a=>tree.push({a, isChild:false}));
+
+                  // Recursive tree flatten: each entry gets {a, depth}
+                  const flattenTree = (parentId, depth) => {
+                    return visible
+                      .filter(a => (a.parentId||"") === (parentId||""))
+                      .flatMap(a => [
+                        {a, depth},
+                        ...flattenTree(a.id, depth+1),
+                      ]);
+                  };
+                  const tree = flattenTree("", 0);
+
                   const doDrop = targetId => {
-                    if (!coaDragId||coaDragId===targetId) return;
+                    if (!coaDragId || coaDragId===targetId) return;
                     const ids = accountOrder||accounts.map(a=>a.id);
                     const f=ids.indexOf(coaDragId), t2=ids.indexOf(targetId);
                     if(f<0||t2<0) return;
@@ -3368,10 +3429,10 @@ export default function FinanceApp() {
                             </tr>
                           </thead>
                           <tbody>
-                            {tree.map(({a, isChild})=>(
+                            {tree.map(({a, depth})=>(
                               <tr key={a.id}
                                 className={[
-                                  isChild ? "coa-sub" : "",
+                                  depth>0 ? "coa-sub" : "",
                                   coaDragOverId===a.id ? "coa-drag-over" : "",
                                   a.inactive ? "coa-inactive" : "",
                                 ].filter(Boolean).join(" ")}
@@ -3383,8 +3444,8 @@ export default function FinanceApp() {
                               >
                                 <td><span className="coa-drag-handle">⠿</span></td>
                                 <td style={{color:"var(--text)"}}>
-                                  <div style={{display:"flex",alignItems:"center",gap:5}}>
-                                    {isChild && <span style={{color:"var(--text3)",fontSize:12}}>└</span>}
+                                  <div style={{display:"flex",alignItems:"center",gap:5,paddingLeft:depth*16}}>
+                                    {depth>0 && <span style={{color:"var(--text3)",fontSize:12}}>└</span>}
                                     {a.name}
                                     {a.inactive && <span className="inactive-badge">inactive</span>}
                                   </div>
