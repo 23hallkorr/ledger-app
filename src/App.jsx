@@ -406,12 +406,12 @@ const styles = `
   .qb-col-heads{display:flex;justify-content:flex-end;padding:5px 32px;background:#f0f0f0;border-bottom:1px solid #bbb;}
   .qb-col-head{font-size:11px;font-weight:700;color:#333;min-width:140px;text-align:right;text-decoration:underline;}
   /* Section heading (INCOME, EXPENSE, ASSETS...) */
-  .qb-section{padding:10px 32px 3px;font-size:12px;font-weight:700;color:#111;background:#fff;border-top:none;}
+  .qb-section{padding:10px 32px 3px;font-size:12px;font-weight:700;color:var(--rpt-section-text,#111);background:var(--rpt-section-bg,#fff);border-top:none;}
   /* Sub-section label */
-  .qb-subsection{padding:4px 32px 1px;font-size:12px;font-weight:700;color:#111;background:#fff;padding-left:44px;}
+  .qb-subsection{padding:4px 32px 1px;font-size:12px;font-weight:700;color:var(--rpt-section-text,#111);background:var(--rpt-section-bg,#fff);padding-left:44px;}
   /* Account row */
-  .qb-row{display:flex;align-items:baseline;padding:2px 32px;cursor:pointer;background:#fff;}
-  .qb-row:hover{background:#f5f5f5;}
+  .qb-row{display:flex;align-items:baseline;padding:2px 32px;cursor:pointer;background:var(--rpt-bg,#fff);}
+  .qb-row:hover{background:var(--rpt-row-even,#f5f5f5);}
   .qb-row.l1{padding-left:48px;}
   .qb-row.l2{padding-left:64px;}
   .qb-row.l3{padding-left:80px;}
@@ -3336,22 +3336,32 @@ export default function FinanceApp() {
   return (
     <>
       <style>{themeVars(theme)}{styles}{`
+        :root {
+          --rpt-bg: ${rTheme.bg};
+          --rpt-section-bg: ${rTheme.sectionBg};
+          --rpt-section-text: ${rTheme.sectionText};
+          --rpt-row-text: ${rTheme.rowText};
+          --rpt-row-even: ${rTheme.rowEven};
+        }
         .qb-report{background:${rTheme.bg};border-color:${rTheme.border};}
-        .qb-header{background:${rTheme.headerBg};border-color:${rTheme.border};}
-        .qb-co{color:${rTheme.headerText};}
-        .qb-title{color:${rTheme.headerText};}
-        .qb-date{color:${rTheme.headerText};}
-        .qb-section{background:${rTheme.sectionBg};color:${rTheme.sectionText};}
-        .qb-subsection{background:${rTheme.sectionBg};color:${rTheme.sectionText};}
-        .qb-row{color:${rTheme.rowText};border-color:${rTheme.border};}
+        .qb-header{background:${rTheme.headerBg} !important;border-color:${rTheme.border};}
+        .qb-co{color:${rTheme.headerText} !important;}
+        .qb-title{color:${rTheme.headerText} !important;}
+        .qb-date{color:${rTheme.headerText} !important;}
+        .qb-section{background:${rTheme.sectionBg} !important;color:${rTheme.sectionText} !important;}
+        .qb-subsection{background:${rTheme.sectionBg} !important;color:${rTheme.sectionText} !important;}
+        .qb-row{color:${rTheme.rowText} !important;border-color:${rTheme.border};}
         .qb-row:nth-child(even){background:${rTheme.rowEven};}
-        .qb-subtotal{background:${rTheme.subtotalBg};color:${rTheme.subtotalText};border-color:${rTheme.border};}
-        .qb-subtotal-label,.qb-subtotal-val{color:${rTheme.subtotalText};}
-        .qb-grand{background:${rTheme.grandBg};border-color:${rTheme.border};}
-        .qb-grand-label,.qb-grand-val{color:${rTheme.grandText};}
+        .qb-label{color:${rTheme.rowText} !important;}
+        .qb-val{color:${rTheme.rowText} !important;}
+        .qb-subtotal{background:${rTheme.subtotalBg} !important;border-color:${rTheme.border};}
+        .qb-subtotal-label,.qb-subtotal-val{color:${rTheme.subtotalText} !important;}
+        .qb-grand{background:${rTheme.grandBg} !important;border-color:${rTheme.border};}
+        .qb-grand-label,.qb-grand-val{color:${rTheme.grandText} !important;}
         .qb-col-heads{background:${rTheme.subtotalBg};border-color:${rTheme.border};}
-        .qb-report .pos{color:${rTheme.pos};}
-        .qb-report .neg{color:${rTheme.neg};}
+        .qb-report .pos{color:${rTheme.pos} !important;}
+        .qb-report .neg{color:${rTheme.neg} !important;}
+        .qb-parent-row .qb-label{color:${rTheme.sectionText} !important;}
       `}</style>
       <div className="app">
 
