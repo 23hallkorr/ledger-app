@@ -654,7 +654,7 @@ const DEFAULT_ACCOUNTS = [
   {id:"5003",name:"Utilities",         type:"Expense",  cashFlow:"Operating",  isDefault:true},
   {id:"5004",name:"Transportation",    type:"Expense",  cashFlow:"Operating",  isDefault:true},
   {id:"5005",name:"Dining & Entertainment",type:"Expense",cashFlow:"Operating",isDefault:true},
-  {id:"5006",name:"Healthcare",        type:"Expense",  cashFlow:"Operating",  isDefault:true},
+  {id:"5006",name:"Health Expense",        type:"Expense",  cashFlow:"Operating",  isDefault:true},
   {id:"5007",name:"Supplies",     type:"Expense",  cashFlow:"Operating",  isDefault:true},
 ];
 
