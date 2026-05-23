@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
+const API = "http://localhost:3001";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STYLES
@@ -329,6 +330,7 @@ const styles = `
   .coa-menu-item.accent:hover{background:rgba(96,165,250,.1);}
   .coa-menu-divider{height:1px;background:var(--border);margin:4px 0;}
   .theme-editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;}
+  .qb-parent-row .qb-label{font-weight:600;color:var(--text) !important;}
   .theme-swatch-input{display:flex;align-items:center;gap:8px;}
   .theme-swatch-input input[type=color]{width:34px;height:28px;border:none;border-radius:4px;cursor:pointer;padding:1px;background:var(--surface2);}
   .theme-swatch-input label{font-size:12px;color:var(--text2);}
@@ -1337,11 +1339,13 @@ function DrillModal({ account, transactions, manualJEs, allAccounts, startDate, 
 // ─────────────────────────────────────────────────────────────────────────────
 // ACCOUNT MODAL
 // ─────────────────────────────────────────────────────────────────────────────
-function AccountModal({ account, onSave, onClose }) {
+function AccountModal({ account, accounts, onSave, onClose }) {
   const genId = (n) => (n||"").toLowerCase().replace(/[^a-z0-9]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"")||("acct-"+Date.now());
   const [form, setForm] = useState(account||{id:"",name:"",type:"Expense",cashFlow:"Operating",isBankFeed:false,parentId:"",inactive:false});
   const s = (k,v) => setForm(p=>({...p,[k]:v}));
   const showFeed = form.type==="Asset" || form.type==="Liability";
+  // Only allow parents of the same type, excluding self
+  const parentCandidates = (accounts||[]).filter(a=>a.type===form.type && a.id !== form.id && !a.parentId);
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
@@ -1350,8 +1354,14 @@ function AccountModal({ account, onSave, onClose }) {
           <input type="text" value={form.name} onChange={e=>{ s("name",e.target.value); if(!account) s("id",genId(e.target.value)); }} placeholder="e.g. Insurance"/>
         </div>
         <div className="field"><label>Type</label>
-          <select value={form.type} onChange={e=>{ s("type",e.target.value); if(e.target.value!=="Asset"&&e.target.value!=="Liability") s("isBankFeed",false); }} style={{width:"100%",padding:"7px 11px"}}>
+          <select value={form.type} onChange={e=>{ s("type",e.target.value); s("parentId",""); if(e.target.value!=="Asset"&&e.target.value!=="Liability") s("isBankFeed",false); }} style={{width:"100%",padding:"7px 11px"}}>
             {ACCOUNT_TYPES.map(t=><option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Parent Account <span style={{fontSize:11,color:"var(--text3)"}}>— optional, creates a sub-account</span></label>
+          <select value={form.parentId||""} onChange={e=>s("parentId",e.target.value||"")} style={{width:"100%",padding:"7px 11px"}}>
+            <option value="">— None (top-level account) —</option>
+            {parentCandidates.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </div>
         <div className="field"><label>Cash Flow Category</label>
@@ -2824,7 +2834,8 @@ export default function FinanceApp() {
     return m;
   },[journalEntries, accounts]);
 
-  const byType = type => activeAccounts.filter(a=>a.type===type).map(a=>({...a,balance:totals[a.id]||0}));
+  const orderedActiveAccounts = useMemo(()=>orderedAccounts.filter(a=>!a.inactive),[orderedAccounts]);
+  const byType = type => orderedActiveAccounts.filter(a=>a.type===type).map(a=>({...a,balance:totals[a.id]||0}));
   const revenues    = byType("Revenue"),   expenses  = byType("Expense");
   const assets      = byType("Asset"),     liabilities = byType("Liability"), equity = byType("Equity");
   // Balances are already the "correct sign" per normal balance rules, so use directly
@@ -2849,7 +2860,7 @@ export default function FinanceApp() {
   const dateLabel = startDate||endDate ? `${startDate||"start"} → ${endDate||"today"}` : "All Periods";
 
   // ── Render ────────────────────────────────────────────────────────────────
-  const theme = THEMES[themeName] || THEMES["Obsidian"];
+  const theme = customTheme || THEMES[themeName] || THEMES["Obsidian"];
 
   const PAGE_LABELS = {
     import:"Import Data", classify:"Transactions", je:"Journal Entries",
@@ -2899,7 +2910,47 @@ export default function FinanceApp() {
     // debounce 800ms
   }, [transactions, accounts, sources, rules, manualJEs, accountOrder,
       reportNames, reconciliations, customTheme, themeName, showCoaInactive, excludedTxns]);
-
+  // Load all data from server on startup
+  useEffect(() => {
+  try {
+    const saved = localStorage.getItem("ledger_data");
+    if (saved) {
+      const d = JSON.parse(saved);
+      if (d.transactions)    setTransactions(d.transactions);
+      if (d.accounts)        setAccounts(d.accounts);
+      if (d.sources)         setSources(d.sources);
+      if (d.rules)           setRules(d.rules);
+      if (d.manualJEs)       setManualJEs(d.manualJEs);
+      if (d.accountOrder)    setAccountOrder(d.accountOrder);
+      if (d.reportNames)     setReportNames(d.reportNames);
+      if (d.reconciliations) setReconciliations(d.reconciliations);
+      if (d.customTheme)     setCustomTheme(d.customTheme);
+      if (d.themeName)       setThemeName(d.themeName);
+      if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
+      if (d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
+    }
+  } catch(e) { console.warn("Could not load saved data:", e); }
+}, []);
+  // Save to server whenever data changes (debounced 1 second)
+  useEffect(() => {
+  try {
+    localStorage.setItem("ledger_data", JSON.stringify({
+      transactions,
+      accounts,
+      sources,
+      rules,
+      manualJEs,
+      accountOrder,
+      reportNames,
+      reconciliations,
+      customTheme,
+      themeName,
+      showCoaInactive,
+      excludedTxns: [...excludedTxns],
+    }));
+  } catch(e) { console.warn("Could not save data:", e); }
+}, [transactions, accounts, sources, rules, manualJEs, accountOrder,
+    reportNames, reconciliations, customTheme, themeName, showCoaInactive, excludedTxns]);
   // Ensure correct viewport on mobile
   useEffect(() => {
     let meta = document.querySelector('meta[name="viewport"]');
@@ -3090,7 +3141,7 @@ export default function FinanceApp() {
                       key={activeSrcId}
                       transactions={sourceTxns}
                       allTransactions={transactions}
-                      accounts={activeAccounts}
+                      accounts={orderedActiveAccounts}
                       sourceAccount={activeSrcId !== "all" ? acctById[activeSrcId] : null}
                       onClassify={classify}
                       onMatchTransfer={matchTransfer}
@@ -3299,12 +3350,25 @@ export default function FinanceApp() {
                     <div className="qb-col-heads"><div className="qb-col-head">Total</div></div>
 
                     <div className="qb-section">Income</div>
-                    {revenues.filter(a=>a.balance!==0).map(a=>(
-                      <div key={a.id} className="qb-row l1" onClick={()=>setDrillAccount(a)}>
-                        <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
-                        <span className={`qb-val${a.balance>0?" pos":a.balance<0?" neg":""}`}>{fmt(a.balance)}</span>
-                      </div>
-                    ))}
+                    {(()=>{
+                      const parents = revenues.filter(a=>!a.parentId&&a.balance!==0);
+                      const orphans  = revenues.filter(a=>a.parentId&&!revenues.find(p=>p.id===a.parentId)&&a.balance!==0);
+                      return [...parents,...orphans].flatMap(a=>{
+                        const children = revenues.filter(c=>c.parentId===a.id&&c.balance!==0);
+                        return [
+                          <div key={a.id} className={`qb-row l1${children.length?" qb-parent-row":""}`} onClick={()=>setDrillAccount(a)}>
+                            <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
+                            <span className={`qb-val${a.balance>0?" pos":a.balance<0?" neg":""}`}>{fmt(a.balance)}</span>
+                          </div>,
+                          ...children.map(c=>(
+                            <div key={c.id} className="qb-row l2" onClick={()=>setDrillAccount(c)}>
+                              <span className="qb-label" style={{paddingLeft:16}}>└ {c.name}<span className="qb-hint">▸</span></span>
+                              <span className={`qb-val${c.balance>0?" pos":c.balance<0?" neg":""}`}>{fmt(c.balance)}</span>
+                            </div>
+                          )),
+                        ];
+                      });
+                    })()}
                     {revenues.filter(a=>a.balance!==0).length===0&&(
                       <div className="qb-row l1 no-click"><span className="qb-label italic">No income recorded</span><span className="qb-val">—</span></div>
                     )}
@@ -3315,12 +3379,25 @@ export default function FinanceApp() {
 
                     <div className="qb-space"/>
                     <div className="qb-section">Expenses</div>
-                    {expenses.filter(a=>a.balance!==0).map(a=>(
-                      <div key={a.id} className="qb-row l1" onClick={()=>setDrillAccount(a)}>
-                        <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
-                        <span className={`qb-val${a.balance>0?" neg":""}`}>{fmt(a.balance)}</span>
-                      </div>
-                    ))}
+                    {(()=>{
+                      const parents = expenses.filter(a=>!a.parentId&&a.balance!==0);
+                      const orphans  = expenses.filter(a=>a.parentId&&!expenses.find(p=>p.id===a.parentId)&&a.balance!==0);
+                      return [...parents,...orphans].flatMap(a=>{
+                        const children = expenses.filter(c=>c.parentId===a.id&&c.balance!==0);
+                        return [
+                          <div key={a.id} className={`qb-row l1${children.length?" qb-parent-row":""}`} onClick={()=>setDrillAccount(a)}>
+                            <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
+                            <span className={`qb-val${a.balance>0?" neg":""}`}>{fmt(a.balance)}</span>
+                          </div>,
+                          ...children.map(c=>(
+                            <div key={c.id} className="qb-row l2" onClick={()=>setDrillAccount(c)}>
+                              <span className="qb-label" style={{paddingLeft:16}}>└ {c.name}<span className="qb-hint">▸</span></span>
+                              <span className={`qb-val${c.balance>0?" neg":""}`}>{fmt(c.balance)}</span>
+                            </div>
+                          )),
+                        ];
+                      });
+                    })()}
                     {expenses.filter(a=>a.balance!==0).length===0&&(
                       <div className="qb-row l1 no-click"><span className="qb-label italic">No expenses recorded</span><span className="qb-val">—</span></div>
                     )}
@@ -3383,12 +3460,25 @@ export default function FinanceApp() {
                     {/* ASSETS */}
                     <div className="qb-section">Assets</div>
                     <div className="qb-subsection">Current Assets</div>
-                    {assets.filter(a=>a.balance!==0).map(a=>(
-                      <div key={a.id} className="qb-row l2" onClick={()=>setDrillAccount(a)}>
-                        <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
-                        <span className={`qb-val${a.balance>0?" pos":a.balance<0?" neg":""}`}>{fmt(a.balance)}</span>
-                      </div>
-                    ))}
+                    {(()=>{
+                      const parents = assets.filter(a=>!a.parentId&&a.balance!==0);
+                      const orphans  = assets.filter(a=>a.parentId&&!assets.find(p=>p.id===a.parentId)&&a.balance!==0);
+                      return [...parents,...orphans].flatMap(a=>{
+                        const children = assets.filter(c=>c.parentId===a.id&&c.balance!==0);
+                        return [
+                          <div key={a.id} className={`qb-row l2${children.length?" qb-parent-row":""}`} onClick={()=>setDrillAccount(a)}>
+                            <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
+                            <span className={`qb-val${a.balance>0?" pos":a.balance<0?" neg":""}`}>{fmt(a.balance)}</span>
+                          </div>,
+                          ...children.map(c=>(
+                            <div key={c.id} className="qb-row l3" onClick={()=>setDrillAccount(c)}>
+                              <span className="qb-label" style={{paddingLeft:16}}>└ {c.name}<span className="qb-hint">▸</span></span>
+                              <span className={`qb-val${c.balance>0?" pos":c.balance<0?" neg":""}`}>{fmt(c.balance)}</span>
+                            </div>
+                          )),
+                        ];
+                      });
+                    })()}
                     <div className="qb-subtotal l1">
                       <span className="qb-subtotal-label">Total Current Assets</span>
                       <span className={`qb-subtotal-val${totalAssets>0?" pos":""}`}>{fmt(totalAssets)}</span>
@@ -3404,12 +3494,21 @@ export default function FinanceApp() {
                     <div className="qb-section">Liabilities &amp; Equity</div>
                     <div className="qb-subsection">Liabilities</div>
                     <div className="qb-row l2 no-click"><span className="qb-label italic" style={{color:"var(--text3)",fontSize:12}}>Current Liabilities</span></div>
-                    {liabilities.filter(a=>a.balance!==0).map(a=>(
-                      <div key={a.id} className="qb-row l3" onClick={()=>setDrillAccount(a)}>
-                        <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
-                        <span className={`qb-val${a.balance>0?" neg":""}`}>{fmt(a.balance)}</span>
-                      </div>
-                    ))}
+                    {liabilities.filter(a=>a.balance!==0&&!a.parentId).concat(liabilities.filter(a=>a.balance!==0&&a.parentId&&!liabilities.find(p=>p.id===a.parentId))).flatMap(a=>{
+                      const children=liabilities.filter(c=>c.parentId===a.id&&c.balance!==0);
+                      return [
+                        <div key={a.id} className={`qb-row l3${children.length?" qb-parent-row":""}`} onClick={()=>setDrillAccount(a)}>
+                          <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
+                          <span className={`qb-val${a.balance>0?" neg":""}`}>{fmt(a.balance)}</span>
+                        </div>,
+                        ...children.map(c=>(
+                          <div key={c.id} className="qb-row l3" style={{paddingLeft:32}} onClick={()=>setDrillAccount(c)}>
+                            <span className="qb-label" style={{paddingLeft:16}}>└ {c.name}<span className="qb-hint">▸</span></span>
+                            <span className={`qb-val${c.balance>0?" neg":""}`}>{fmt(c.balance)}</span>
+                          </div>
+                        )),
+                      ];
+                    })}
                     <div className="qb-subtotal l2">
                       <span className="qb-subtotal-label">Total Current Liabilities</span>
                       <span className={`qb-subtotal-val${totalLiabilities>0?" neg":""}`}>{fmt(totalLiabilities)}</span>
@@ -3421,12 +3520,21 @@ export default function FinanceApp() {
 
                     <div className="qb-space"/>
                     <div className="qb-subsection">Equity</div>
-                    {equity.filter(a=>a.balance!==0).map(a=>(
-                      <div key={a.id} className="qb-row l2" onClick={()=>setDrillAccount(a)}>
-                        <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
-                        <span className={`qb-val${a.balance>0?" pos":""}`}>{fmt(a.balance)}</span>
-                      </div>
-                    ))}
+                    {equity.filter(a=>a.balance!==0&&!a.parentId).concat(equity.filter(a=>a.balance!==0&&a.parentId&&!equity.find(p=>p.id===a.parentId))).flatMap(a=>{
+                      const children=equity.filter(c=>c.parentId===a.id&&c.balance!==0);
+                      return [
+                        <div key={a.id} className={`qb-row l2${children.length?" qb-parent-row":""}`} onClick={()=>setDrillAccount(a)}>
+                          <span className="qb-label">{a.name}<span className="qb-hint">▸</span></span>
+                          <span className={`qb-val${a.balance>0?" pos":""}`}>{fmt(a.balance)}</span>
+                        </div>,
+                        ...children.map(c=>(
+                          <div key={c.id} className="qb-row l2" style={{paddingLeft:32}} onClick={()=>setDrillAccount(c)}>
+                            <span className="qb-label" style={{paddingLeft:16}}>└ {c.name}<span className="qb-hint">▸</span></span>
+                            <span className={`qb-val${c.balance>0?" pos":""}`}>{fmt(c.balance)}</span>
+                          </div>
+                        )),
+                      ];
+                    })}
                     <div className="qb-row l2 no-click">
                       <span className="qb-label">Net Income</span>
                       <span className={`qb-val${netIncome>=0?" pos":" neg"}`}>{fmt(netIncome)}</span>
@@ -3527,7 +3635,7 @@ export default function FinanceApp() {
       {/* MODALS */}
       {showImportModal  && <ImportModal  accounts={activeAccounts} onImport={handleImport} onClose={()=>setShowImportModal(false)}/>}
       {showPreCatModal  && <PreCatImportModal accounts={activeAccounts} onImport={handlePreCatImport} onClose={()=>setShowPreCatModal(false)}/>}
-      {showAcctModal    && <AccountModal account={modalAccount}  onSave={saveAccount}  onClose={()=>{setShowAcctModal(false);setModalAccount(null);}}/>}
+      {showAcctModal    && <AccountModal account={modalAccount}  accounts={accounts} onSave={saveAccount}  onClose={()=>{setShowAcctModal(false);setModalAccount(null);}}/>}
       {showRuleModal    && <RuleModal    rule={modalRule}        accounts={activeAccounts}   onSave={saveRule}    onClose={()=>{setShowRuleModal(false);setModalRule(null);}}/>}
       {reconAccount     && <ReconcileModal account={reconAccount} transactions={transactions}
         onComplete={completeReconciliation} onClose={()=>setReconAccount(null)}/>}
