@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 
-const API = "ledger-app-production-6224.up.railway.app"; // ← replace with your Railway URL
+const API = "https://ledger-app-production-6224.up.railway.app"; // ← replace with your Railway URL
 
 
 // ─────────────────────────────────────────────────────────────────────────────
