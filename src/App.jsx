@@ -1655,6 +1655,88 @@ function PreCatImportModal({ accounts, onImport, onClose }) {
   return null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SPLIT MODAL — split a transaction across multiple categories
+// ─────────────────────────────────────────────────────────────────────────────
+function SplitModal({ transaction, accounts, onSave, onClose }) {
+  const total = Math.abs(transaction.amount);
+  const mkSplit = () => ({ id: Math.random().toString(36).slice(2), accountId: "", amount: "" });
+  const [splits, setSplits] = useState(() => {
+    if (transaction.splits && transaction.splits.length > 0) {
+      return transaction.splits.map(s => ({ ...s, id: s.id || Math.random().toString(36).slice(2) }));
+    }
+    return [
+      { id: Math.random().toString(36).slice(2), accountId: transaction.accountId || "", amount: fmt(total).replace(/[^0-9.]/g,"") },
+      mkSplit(),
+    ];
+  });
+
+  const setField = (id, field, val) => setSplits(p => p.map(s => s.id===id ? {...s,[field]:val} : s));
+  const addLine  = () => setSplits(p => [...p, mkSplit()]);
+  const dropLine = id => setSplits(p => p.length > 1 ? p.filter(s => s.id!==id) : p);
+
+  const splitTotal = splits.reduce((s,l) => s + (parseFloat(l.amount)||0), 0);
+  const remaining  = Math.round((total - splitTotal) * 100) / 100;
+  const balanced   = Math.abs(remaining) < 0.005;
+
+  const save = () => {
+    const valid = splits.filter(s => s.accountId && parseFloat(s.amount) > 0);
+    if (!balanced || valid.length === 0) return;
+    onSave(transaction.id, valid);
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{width:560,maxWidth:"96vw"}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-title">Split Transaction</div>
+        <div style={{fontSize:12,color:"var(--text2)",marginBottom:14}}>
+          <b>{transaction.description}</b> &nbsp;·&nbsp;
+          <span style={{fontFamily:"DM Mono,monospace"}}>{fmt(transaction.amount)}</span>
+          &nbsp;on {transaction.date}
+        </div>
+        <table style={{width:"100%",borderCollapse:"collapse",marginBottom:12}}>
+          <thead>
+            <tr style={{background:"var(--surface2)"}}>
+              <th style={{padding:"7px 10px",textAlign:"left",fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase"}}>Account</th>
+              <th style={{padding:"7px 10px",textAlign:"right",fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase",width:110}}>Amount</th>
+              <th style={{width:34}}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {splits.map(s => (
+              <tr key={s.id} style={{borderBottom:"1px solid var(--border)"}}>
+                <td style={{padding:"6px 8px"}}>
+                  <AccountCombo value={s.accountId||null} accounts={accounts} onChange={id=>setField(s.id,"accountId",id||"")}/>
+                </td>
+                <td style={{padding:"6px 8px"}}>
+                  <input type="number" min="0" step="0.01" value={s.amount} placeholder="0.00"
+                    onChange={e=>setField(s.id,"amount",e.target.value)}
+                    style={{width:"100%",textAlign:"right",background:"var(--surface2)",border:"1px solid var(--border)",borderRadius:6,padding:"5px 8px",color:"var(--text)",fontFamily:"DM Mono,monospace",fontSize:13}}/>
+                </td>
+                <td style={{padding:"6px 4px",textAlign:"center"}}>
+                  <button onClick={()=>dropLine(s.id)} style={{background:"none",border:"none",color:"var(--text3)",cursor:"pointer",fontSize:16}}>×</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+          <button className="btn btn-ghost btn-sm" onClick={addLine}>+ Add Line</button>
+          <span style={{marginLeft:"auto",fontSize:12,fontFamily:"DM Mono,monospace",
+            color:balanced?"var(--green)":remaining<0?"var(--red)":"var(--amber)"}}>
+            {balanced ? "✓ Balanced" : remaining > 0 ? `${fmt(remaining)} remaining` : `Over by ${fmt(Math.abs(remaining))}`}
+          </span>
+        </div>
+        <div className="flex gap-8 mt-14">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary ml-auto" disabled={!balanced} onClick={save}>Save Split</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BulkModal({ count, accounts, onApply, onClose }) {
   const [accountId, setAccountId] = useState("");
   return (
@@ -1787,7 +1869,7 @@ function ResizeTh({ width, onResize, children, style={} }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSACTION TABLE
 // ─────────────────────────────────────────────────────────────────────────────
-function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onClassify, onMatchTransfer, onDelete, rules, onApplyRules }) {
+function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onClassify, onSplit, onMatchTransfer, onDelete, rules, onApplyRules }) {
   const [selected,      setSelected]      = useState(new Set());
   const [search,        setSearch]        = useState("");
   const [section,       setSection]       = useState("uncategorized");
@@ -2079,14 +2161,24 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onCl
                                           <span style={{fontSize:10,color:"var(--amber)",marginLeft:2}}>● pending</span>
                                         </div>); })()
                                   : <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                      {catAcct
-                                        ? <><span className={`badge badge-${catAcct.type.toLowerCase()}`} style={{fontSize:10}}>{catAcct.type}</span>
-                                            <span style={{fontSize:12,color:"var(--text2)"}}>{catAcct.name}</span>
+                                      {t.splits && t.splits.length > 1
+                                        ? <><span className="badge" style={{background:"rgba(167,139,250,.15)",color:"var(--purple)",fontSize:10}}>Split</span>
+                                            <span style={{fontSize:12,color:"var(--text2)"}}>{t.splits.length} categories</span>
                                             <span style={{fontSize:10,color:"var(--text3)"}}>✎</span></>
-                                        : <span style={{fontSize:12,color:"var(--text3)"}}>Click to classify…</span>
+                                        : catAcct
+                                          ? <><span className={`badge badge-${catAcct.type.toLowerCase()}`} style={{fontSize:10}}>{catAcct.type}</span>
+                                              <span style={{fontSize:12,color:"var(--text2)"}}>{catAcct.name}</span>
+                                              <span style={{fontSize:10,color:"var(--text3)"}}>✎</span></>
+                                          : <span style={{fontSize:12,color:"var(--text3)"}}>Click to classify…</span>
                                       }
                                     </div>
                                 }
+                              </td>
+                              <td style={{paddingLeft:2,whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
+                                {t.accountId && onSplit && (
+                                  <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:"2px 6px",opacity:.6}}
+                                    onClick={()=>onSplit(t)} title="Split across categories">⑂</button>
+                                )}
                               </td>
                             </>
                         }
@@ -2221,7 +2313,7 @@ function TrendReport({ type, accounts, transactions, excludedTxns, startDate, en
 // JOURNAL ENTRY PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete }) {
-  const mkLine = () => ({ id: Math.random().toString(36).slice(2), accountId: "", debit: "", credit: "" });
+  const mkLine = () => ({ id: Math.random().toString(36).slice(2), accountId: "", debit: "", credit: "", memo: "" });
   const [date,      setDate]      = useState(() => new Date().toISOString().slice(0,10));
   const [memo,      setMemo]      = useState("");
   const [lines,     setLines]     = useState([mkLine(), mkLine()]);
@@ -2290,10 +2382,11 @@ function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete })
         <table className="je-table">
           <thead>
             <tr>
-              <th style={{...thStyle(),width:"42%"}}>Account</th>
-              <th style={{...thStyle("right"),width:"22%"}}>Debit</th>
-              <th style={{...thStyle("right"),width:"22%"}}>Credit</th>
-              <th style={{...thStyle("center"),width:"14%"}}></th>
+              <th style={{...thStyle(),width:"32%"}}>Account</th>
+              <th style={{...thStyle(),width:"28%"}}>Memo / Description</th>
+              <th style={{...thStyle("right"),width:"17%"}}>Debit</th>
+              <th style={{...thStyle("right"),width:"17%"}}>Credit</th>
+              <th style={{...thStyle("center"),width:"6%"}}></th>
             </tr>
           </thead>
           <tbody>
@@ -2306,6 +2399,14 @@ function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete })
                       value={line.accountId || null}
                       accounts={accounts}
                       onChange={id => setLine(line.id, "accountId", id || "")}
+                    />
+                  </td>
+                  <td>
+                    <input type="text" value={line.memo||""} placeholder="optional…"
+                      onChange={e=>setLine(line.id,"memo",e.target.value)}
+                      style={{width:"100%",background:"var(--surface2)",border:"1px solid var(--border)",borderRadius:"var(--radius)",padding:"7px 10px",fontFamily:"DM Sans,sans-serif",fontSize:12,color:"var(--text)",outline:"none"}}
+                      onFocus={e=>e.target.style.borderColor="var(--accent)"}
+                      onBlur={e=>e.target.style.borderColor="var(--border)"}
                     />
                   </td>
                   <td style={{textAlign:"right"}}>
@@ -2387,6 +2488,7 @@ function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete })
                             {acct
                               ? <><span className={`badge badge-${acct.type.toLowerCase()}`} style={{fontSize:10,marginRight:6}}>{acct.type}</span>{acct.name}</>
                               : <span style={{color:"var(--text3)"}}>Unknown</span>}
+                            {l.memo && <span style={{fontSize:11,color:"var(--text3)",marginLeft:8,fontStyle:"italic"}}>— {l.memo}</span>}
                           </td>
                           <td style={{padding:"7px 16px",textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:"var(--blue)"}}>
                             {dr2>0?fmt(dr2):""}
@@ -2411,45 +2513,97 @@ function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete })
 // ─────────────────────────────────────────────────────────────────────────────
 // RECONCILIATION MODAL
 // ─────────────────────────────────────────────────────────────────────────────
-function ReconcileModal({ account, transactions, onComplete, onClose }) {
+function ReconcileModal({ account, transactions, manualJEs, accounts, onComplete, onUpdate, onClose }) {
   const [endBalance,   setEndBalance]   = useState("");
   const [endDate,      setEndDate]      = useState(()=>new Date().toISOString().slice(0,10));
   const [includeAfter, setIncludeAfter] = useState(false);
   const [step,         setStep]         = useState(1);
   const [cleared,      setCleared]      = useState(new Set());
+  const [editingId,    setEditingId]    = useState(null);
+  const [editFields,   setEditFields]   = useState({});
 
-  // Normalise any date string to YYYY-MM-DD for reliable comparison
+  const acctById = Object.fromEntries((accounts||[]).map(a=>[a.id,a]));
+
   const normDate = (d) => {
     if (!d) return "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d; // already YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(d)) {
       const [m, day, y] = d.split("/");
       return `${y.length===2?"20"+y:y}-${m.padStart(2,"0")}-${day.padStart(2,"0")}`;
     }
-    // Try parsing anything else via Date
     const parsed = new Date(d);
     if (!isNaN(parsed)) return parsed.toISOString().slice(0,10);
     return d;
   };
 
-  const acctTxns = useMemo(()=>
-    transactions
-      .filter(t=>(t.sourceId===account.id||t.accountId===account.id))
-      .filter(t=>t.accountId)          // categorized only
-      .filter(t=>!t.reconciled)        // unreconciled only
-      .filter(t=>{
-        if (!t.date) return true;
-        const nd = normDate(t.date);
-        return nd <= endDate || (includeAfter && nd > endDate);
-      })
-      .sort((a,b)=>normDate(a.date)>normDate(b.date)?1:normDate(a.date)<normDate(b.date)?-1:0)
-  ,[transactions,account.id,endDate,includeAfter]);
+  // Combine bank transactions + JE lines for this account
+  const allItems = useMemo(()=>{
+    const txnItems = transactions
+      .filter(t=>(t.sourceId===account.id||t.accountId===account.id) && t.accountId && !t.reconciled)
+      .filter(t=>{ if(!t.date) return true; const nd=normDate(t.date); return nd<=endDate||(includeAfter&&nd>endDate); })
+      .map(t=>({
+        id: t.id,
+        type: "txn",
+        date: t.date,
+        description: t.description,
+        amount: t.amount,
+        accountId: t.accountId,
+        sourceId: t.sourceId,
+        _raw: t,
+      }));
 
-  const clearedTotal = acctTxns.filter(t=>cleared.has(t.id)).reduce((s,t)=>s+t.amount,0);
+    const jeItems = (manualJEs||[])
+      .filter(je=>{ if(!je.date) return true; const nd=normDate(je.date); return nd<=endDate||(includeAfter&&nd>endDate); })
+      .flatMap(je => je.lines
+        .filter(l=>l.accountId===account.id)
+        .map(l => ({
+          id: `${je.id}::${l.id||l.accountId}`,
+          type: "je",
+          date: je.date,
+          description: je.memo || "Journal Entry",
+          amount: (parseFloat(l.debit)||0) - (parseFloat(l.credit)||0),
+          debit:  parseFloat(l.debit)||0,
+          credit: parseFloat(l.credit)||0,
+          _je: je,
+          _line: l,
+        }))
+      );
+
+    return [...txnItems, ...jeItems].sort((a,b)=>normDate(a.date)>normDate(b.date)?1:-1);
+  },[transactions,manualJEs,account.id,endDate,includeAfter]);
+
+  // Determine debit/credit for a txn item based on account type
+  const getDebitCredit = (item) => {
+    if (item.type==="je") return { debit: item.debit||0, credit: item.credit||0 };
+    const acct = acctById[account.id];
+    const isDebitNormal = acct && ["Asset","Expense"].includes(acct.type);
+    if (isDebitNormal) {
+      return item.amount >= 0
+        ? { debit: Math.abs(item.amount), credit: 0 }
+        : { debit: 0, credit: Math.abs(item.amount) };
+    } else {
+      return item.amount >= 0
+        ? { debit: 0, credit: Math.abs(item.amount) }
+        : { debit: Math.abs(item.amount), credit: 0 };
+    }
+  };
+
+  const clearedTotal = allItems.filter(i=>cleared.has(i.id)).reduce((s,i)=>s+i.amount,0);
   const endBal = parseFloat(endBalance)||0;
   const diff   = endBal - clearedTotal;
   const isBalanced = Math.abs(diff)<0.005;
   const toggle = id => setCleared(s=>{ const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n; });
+
+  const startEdit = (item) => {
+    setEditingId(item.id);
+    setEditFields({ date: item.date||"", description: item.description||"", amount: String(item.amount||"") });
+  };
+  const saveEdit = (item) => {
+    if (item.type==="txn" && onUpdate) {
+      onUpdate(item.id, { date: editFields.date, description: editFields.description, amount: parseFloat(editFields.amount)||item.amount });
+    }
+    setEditingId(null);
+  };
 
   if (step===1) return (
     <div className="modal-overlay" onClick={onClose}>
@@ -2475,6 +2629,8 @@ function ReconcileModal({ account, transactions, onComplete, onClose }) {
     </div>
   );
 
+  const thS = {padding:"8px 10px",background:"var(--surface2)",borderBottom:"1px solid var(--border)",fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase"};
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="recon-modal" onClick={e=>e.stopPropagation()}>
@@ -2487,7 +2643,7 @@ function ReconcileModal({ account, transactions, onComplete, onClose }) {
             <button className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:12,marginTop:10,flexWrap:"wrap"}}>
-            <button className="btn btn-ghost btn-sm" onClick={()=>setCleared(new Set(acctTxns.map(t=>t.id)))}>Select All</button>
+            <button className="btn btn-ghost btn-sm" onClick={()=>setCleared(new Set(allItems.map(i=>i.id)))}>Select All</button>
             <button className="btn btn-ghost btn-sm" onClick={()=>setCleared(new Set())}>Clear All</button>
             <div style={{marginLeft:"auto",display:"flex",gap:14}}>
               <span style={{fontSize:12,color:"var(--text3)"}}>Cleared: <b style={{fontFamily:"DM Mono,monospace",color:"var(--text)"}}>{fmt(clearedTotal)}</b></span>
@@ -2496,27 +2652,57 @@ function ReconcileModal({ account, transactions, onComplete, onClose }) {
           </div>
         </div>
         <div className="recon-body">
-          {acctTxns.length===0
-            ? <div className="empty"><div className="empty-icon">✓</div><div className="empty-title">No unreconciled transactions</div><div className="empty-sub">All categorized transactions are already reconciled, or none exist before this date.</div></div>
+          {allItems.length===0
+            ? <div className="empty"><div className="empty-icon">✓</div><div className="empty-title">No unreconciled items</div></div>
             : <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead><tr>
-                  <th style={{width:40,padding:"8px 18px",background:"var(--surface2)",borderBottom:"1px solid var(--border)"}}></th>
-                  <th style={{padding:"8px 10px",background:"var(--surface2)",borderBottom:"1px solid var(--border)",fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase"}}>Date</th>
-                  <th style={{padding:"8px 10px",background:"var(--surface2)",borderBottom:"1px solid var(--border)",fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase"}}>Description</th>
-                  <th style={{padding:"8px 10px",background:"var(--surface2)",borderBottom:"1px solid var(--border)",fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase",textAlign:"right"}}>Amount</th>
+                  <th style={{...thS,width:40}}></th>
+                  <th style={{...thS,width:95}}>Date</th>
+                  <th style={thS}>Description</th>
+                  <th style={{...thS,textAlign:"right",width:100}}>Debit</th>
+                  <th style={{...thS,textAlign:"right",width:100}}>Credit</th>
+                  <th style={{...thS,width:60}}>Edit</th>
                 </tr></thead>
                 <tbody>
-                  {acctTxns.map(t=>{
-                    const c=cleared.has(t.id);
+                  {allItems.map(item=>{
+                    const c = cleared.has(item.id);
+                    const isJE = item.type==="je";
+                    const isEditing = editingId===item.id;
+                    const {debit,credit} = getDebitCredit(item);
                     return (
-                      <tr key={t.id} className={`recon-row${c?" cleared":""}`} onClick={()=>toggle(t.id)}>
+                      <tr key={item.id} className={`recon-row${c?" cleared":""}`} onClick={()=>toggle(item.id)}>
                         <td style={{paddingLeft:18,paddingTop:8,paddingBottom:8}}>
-                          <input type="checkbox" className="cb" checked={c} onChange={()=>toggle(t.id)} onClick={e=>e.stopPropagation()}/>
+                          <input type="checkbox" className="cb" checked={c} onChange={()=>toggle(item.id)} onClick={e=>e.stopPropagation()}/>
                         </td>
-                        <td style={{padding:"7px 10px",fontSize:12,color:"var(--text3)",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>{t.date}</td>
-                        <td style={{padding:"7px 10px",fontSize:13,color:"var(--text)"}}>{t.description}</td>
-                        <td style={{padding:"7px 10px",textAlign:"right"}}>
-                          <span className={t.amount>=0?"amount pos":"amount neg"}>{fmt(t.amount)}</span>
+                        <td style={{padding:"7px 10px",fontSize:12,color:"var(--text3)",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>
+                          {isEditing && !isJE
+                            ? <input type="date" value={editFields.date} onChange={e=>setEditFields(p=>({...p,date:e.target.value}))}
+                                onClick={e=>e.stopPropagation()}
+                                style={{width:120,fontSize:11,padding:"2px 4px",background:"var(--surface2)",border:"1px solid var(--accent)",borderRadius:4,color:"var(--text)"}}/>
+                            : item.date}
+                        </td>
+                        <td style={{padding:"7px 10px",fontSize:13,color:"var(--text)"}}>
+                          {isEditing && !isJE
+                            ? <input value={editFields.description} onChange={e=>setEditFields(p=>({...p,description:e.target.value}))}
+                                onClick={e=>e.stopPropagation()}
+                                style={{width:"100%",fontSize:12,padding:"2px 6px",background:"var(--surface2)",border:"1px solid var(--accent)",borderRadius:4,color:"var(--text)"}}/>
+                            : <span>{item.description}{isJE && <span style={{fontSize:10,color:"var(--purple)",marginLeft:6}}>JE</span>}</span>}
+                        </td>
+                        <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:"var(--blue)"}}>
+                          {isEditing && !isJE
+                            ? <input type="number" value={editFields.amount} onChange={e=>setEditFields(p=>({...p,amount:e.target.value}))}
+                                onClick={e=>e.stopPropagation()}
+                                style={{width:80,textAlign:"right",fontSize:12,padding:"2px 4px",background:"var(--surface2)",border:"1px solid var(--accent)",borderRadius:4,color:"var(--text)"}}/>
+                            : debit > 0 ? fmt(debit) : ""}
+                        </td>
+                        <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:"var(--purple)"}}>
+                          {credit > 0 && !isEditing ? fmt(credit) : ""}
+                        </td>
+                        <td style={{padding:"7px 10px"}} onClick={e=>e.stopPropagation()}>
+                          {!isJE && (isEditing
+                            ? <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:"2px 6px"}} onClick={()=>saveEdit(item)}>✓</button>
+                            : <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:"2px 6px",opacity:.5}} onClick={()=>startEdit(item)}>✎</button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -2528,12 +2714,13 @@ function ReconcileModal({ account, transactions, onComplete, onClose }) {
         <div className="recon-footer">
           <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:13,color:"var(--text2)"}}>
             <input type="checkbox" checked={includeAfter} onChange={e=>setIncludeAfter(e.target.checked)} style={{width:14,height:14,accentColor:"var(--accent)"}}/>
-            Include transactions after statement date
+            Include after statement date
           </label>
           <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
             {!isBalanced&&<span style={{fontSize:12,color:"var(--red)"}}>Off by {fmt(Math.abs(diff))}</span>}
             <button className="btn btn-ghost" onClick={()=>setStep(1)}>← Back</button>
-            <button className="btn btn-primary" disabled={!isBalanced} onClick={()=>onComplete(account.id,endDate,endBal,[...cleared])}>
+            <button className="btn btn-primary" disabled={!isBalanced}
+              onClick={()=>onComplete(account.id,endDate,endBal,[...cleared].filter(id=>!id.includes("::")))}>
               ✓ Finish Reconciliation
             </button>
           </div>
@@ -2751,6 +2938,9 @@ export default function FinanceApp() {
   const [customTheme,     setCustomTheme]     = useState(null);
   const [showThemeEditor, setShowThemeEditor] = useState(false);
   const [customReportTheme,     setCustomReportTheme]     = useState(null);
+  const [splitTxn,        setSplitTxn]        = useState(null);   // transaction being split
+  const [globalSearch,    setGlobalSearch]    = useState("");
+  const [showSearch,      setShowSearch]      = useState(false);
   const [showReportThemeEditor, setShowReportThemeEditor] = useState(false);
   const [reportNames,    setReportNames]   = useState({
     company: "My Company",
@@ -2798,7 +2988,14 @@ export default function FinanceApp() {
 
   // ── Classify ──────────────────────────────────────────────────────────────
   const classify = useCallback((txnId, accountId) => {
-    setTransactions(prev => prev.map(t => t.id===txnId ? {...t, accountId: accountId||null} : t));
+    setTransactions(prev => prev.map(t => t.id===txnId ? {...t, accountId: accountId||null, splits: null} : t));
+  }, []);
+
+  const saveSplit = useCallback((txnId, splits) => {
+    // Primary accountId = first split's account; splits array stored for display & accounting
+    setTransactions(prev => prev.map(t =>
+      t.id===txnId ? {...t, accountId: splits[0].accountId, splits} : t
+    ));
   }, []);
 
   const applyAllRules = useCallback(() => {
@@ -2913,6 +3110,33 @@ export default function FinanceApp() {
 
     reportTxns.filter(t => t.accountId).forEach(t => {
       const srcAcct = t.sourceId ? acctById[t.sourceId] : null;
+
+      // Split transaction — each split line posts independently
+      if (t.splits && t.splits.length > 1) {
+        t.splits.forEach(sp => {
+          const catAcct = acctById[sp.accountId];
+          if (!catAcct) return;
+          const abs = Math.abs(parseFloat(sp.amount)||0);
+          if (srcAcct) {
+            const sign = t.amount < 0 ? -1 : 1;
+            const fakeTxn = {...t, amount: sign * abs, accountId: sp.accountId};
+            const e = journalEntry(fakeTxn, srcAcct, catAcct);
+            if (e.debitAcctId && e.creditAcctId) txnEntries.push(e);
+          } else {
+            if (DEBIT_NORMAL.has(catAcct.type)) {
+              txnEntries.push(t.amount < 0
+                ? { debitAcctId: catAcct.id, creditAcctId: null, absAmount: abs }
+                : { debitAcctId: null, creditAcctId: catAcct.id, absAmount: abs });
+            } else {
+              txnEntries.push(t.amount > 0
+                ? { debitAcctId: null, creditAcctId: catAcct.id, absAmount: abs }
+                : { debitAcctId: catAcct.id, creditAcctId: null, absAmount: abs });
+            }
+          }
+        });
+        return;
+      }
+
       const catAcct = acctById[t.accountId];
       if (!catAcct) return;
 
@@ -2969,7 +3193,7 @@ export default function FinanceApp() {
   const byType = type => orderedActiveAccounts.filter(a=>a.type===type).map(a=>({...a,balance:totals[a.id]||0}));
   const revenues    = byType("Revenue"),   expenses  = byType("Expense");
   const assets      = byType("Asset"),     liabilities = byType("Liability"), equity = byType("Equity");
-  // Balances are already the "correct sign" per normal balance rules, so use directly
+  // For totals, sum ALL accounts of that type (not just roots) to avoid double-counting with subtreeBalance
   const totalRevenue    = revenues.reduce((s,a)=>s+a.balance,0);
   const totalExpenses   = expenses.reduce((s,a)=>s+a.balance,0);
   const netIncome       = totalRevenue - totalExpenses;
@@ -2995,18 +3219,31 @@ export default function FinanceApp() {
   const rTheme = {...DEFAULT_REPORT_THEME, ...(customReportTheme||{})};
 
   // Recursive tree renderer for reports
+  // Computes subtree balance (own + all descendants) so parents show even if own balance is 0
+  const subtreeBalance = (allAccounts, id) => {
+    const acct = allAccounts.find(a => a.id === id);
+    if (!acct) return 0;
+    const childTotal = allAccounts
+      .filter(a => (a.parentId||"") === id)
+      .reduce((s, c) => s + subtreeBalance(allAccounts, c.id), 0);
+    return (acct.balance || 0) + childTotal;
+  };
+
   const renderAccountTree = (allAccounts, parentId, depth, posClass, negClass) => {
-    const children = allAccounts.filter(a => (a.parentId||"") === (parentId||"") && a.balance !== 0);
+    const children = allAccounts.filter(a => (a.parentId||"") === (parentId||""));
     return children.flatMap(a => {
-      const subChildren = allAccounts.filter(c => c.parentId === a.id && c.balance !== 0);
+      const sub = subtreeBalance(allAccounts, a.id);
+      if (sub === 0) return [];
+      const subChildren = allAccounts.filter(c => (c.parentId||"") === a.id);
+      const hasVisibleChildren = subChildren.some(c => subtreeBalance(allAccounts, c.id) !== 0);
       const indent = depth * 14;
       return [
-        <div key={a.id} className={`qb-row l${Math.min(depth+1,3)}${subChildren.length?" qb-parent-row":""}`}
+        <div key={a.id} className={`qb-row l${Math.min(depth+1,3)}${hasVisibleChildren?" qb-parent-row":""}`}
           style={{cursor:"pointer"}} onClick={()=>setDrillAccount(a)}>
           <span className="qb-label" style={indent?{paddingLeft:indent}:{}}>
             {depth>0?"└ ":""}{a.name}<span className="qb-hint">▸</span>
           </span>
-          <span className={`qb-val${a.balance>0?` ${posClass}`:a.balance<0?` ${negClass}`:""}`}>{fmt(a.balance)}</span>
+          <span className={`qb-val${sub>0?` ${posClass}`:sub<0?` ${negClass}`:""}`}>{fmt(sub)}</span>
         </div>,
         ...renderAccountTree(allAccounts, a.id, depth+1, posClass, negClass),
       ];
@@ -3054,6 +3291,14 @@ export default function FinanceApp() {
     } catch(e) { console.warn("Could not save data:", e); }
   }, [transactions, accounts, sources, rules, manualJEs, accountOrder,
       reportNames, reconciliations, customTheme, themeName, showCoaInactive, excludedTxns, customReportTheme]);
+  // Close search on outside click
+  useEffect(()=>{
+    if (!showSearch) return;
+    const h = ()=>setShowSearch(false);
+    document.addEventListener("mousedown",h);
+    return ()=>document.removeEventListener("mousedown",h);
+  },[showSearch]);
+
   // Ensure correct viewport on mobile
   useEffect(() => {
     let meta = document.querySelector('meta[name="viewport"]');
@@ -3221,8 +3466,58 @@ export default function FinanceApp() {
         {/* MAIN */}
         <main className="main">
           <div className="page">
-
-            {/* ── IMPORT ── */}
+            {/* ── GLOBAL SEARCH ── */}
+            <div style={{position:"relative",marginBottom:16}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,background:"var(--surface2)",border:"1px solid var(--border)",borderRadius:8,padding:"6px 12px"}}>
+                <span style={{color:"var(--text3)",fontSize:14}}>🔍</span>
+                <input
+                  value={globalSearch}
+                  onChange={e=>{setGlobalSearch(e.target.value);setShowSearch(!!e.target.value);}}
+                  onFocus={()=>{if(globalSearch)setShowSearch(true);}}
+                  placeholder="Search transactions by description or amount…"
+                  style={{flex:1,background:"transparent",border:"none",outline:"none",color:"var(--text)",fontSize:13,fontFamily:"DM Sans,sans-serif"}}
+                />
+                {globalSearch && <button onClick={()=>{setGlobalSearch("");setShowSearch(false);}}
+                  style={{background:"none",border:"none",color:"var(--text3)",cursor:"pointer",fontSize:16,lineHeight:1}}>×</button>}
+              </div>
+              {showSearch && globalSearch && (()=>{
+                const q = globalSearch.toLowerCase();
+                const results = transactions.filter(t=>{
+                  const descMatch = (t.description||"").toLowerCase().includes(q);
+                  const amtMatch  = String(Math.abs(t.amount||0)).includes(q) || fmt(t.amount).includes(q);
+                  return descMatch || amtMatch;
+                }).slice(0,25);
+                const acctById2 = Object.fromEntries(accounts.map(a=>[a.id,a]));
+                return (
+                  <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,background:"var(--surface)",border:"1px solid var(--border)",borderRadius:8,boxShadow:"0 8px 32px rgba(0,0,0,.25)",zIndex:200,maxHeight:360,overflowY:"auto"}}>
+                    {results.length===0
+                      ? <div style={{padding:"16px 18px",color:"var(--text3)",fontSize:13}}>No transactions match "{globalSearch}"</div>
+                      : <>
+                          <div style={{padding:"8px 14px 4px",fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase",letterSpacing:"1px",borderBottom:"1px solid var(--border)"}}>
+                            {results.length} result{results.length!==1?"s":""}
+                          </div>
+                          {results.map(t=>{
+                            const acct = t.accountId ? acctById2[t.accountId] : null;
+                            return (
+                              <div key={t.id} style={{padding:"9px 16px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}
+                                onClick={()=>{setActiveSrcId(t.sourceId||"all");setPage("classify");setShowSearch(false);setGlobalSearch("");}}>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:13,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</div>
+                                  <div style={{fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginTop:1}}>{t.date}</div>
+                                </div>
+                                <div style={{textAlign:"right",flexShrink:0}}>
+                                  <div style={{fontSize:13,fontFamily:"DM Mono,monospace",color:t.amount>=0?"var(--green)":"var(--red)"}}>{fmt(t.amount)}</div>
+                                  {acct && <div style={{fontSize:10,color:"var(--text3)",marginTop:1}}>{acct.name}</div>}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </>
+                    }
+                  </div>
+                );
+              })()}
+            </div>
             {page==="import" && (
               <>
                 <div className="page-title">Import Bank Data</div>
@@ -3313,6 +3608,7 @@ export default function FinanceApp() {
                       accounts={orderedActiveAccounts}
                       sourceAccount={activeSrcId !== "all" ? acctById[activeSrcId] : null}
                       onClassify={classify}
+                      onSplit={txn=>setSplitTxn(txn)}
                       onMatchTransfer={matchTransfer}
                       onDelete={deleteTxn}
                       rules={rules}
@@ -3401,7 +3697,8 @@ export default function FinanceApp() {
 
                   const doDrop = targetId => {
                     if (!coaDragId || coaDragId===targetId) return;
-                    const ids = accountOrder||accounts.map(a=>a.id);
+                    // Always derive from the currently displayed order, not the raw accounts array
+                    const ids = orderedAccounts.map(a=>a.id);
                     const f=ids.indexOf(coaDragId), t2=ids.indexOf(targetId);
                     if(f<0||t2<0) return;
                     const next=[...ids]; next.splice(f,1); next.splice(t2,0,coaDragId);
@@ -3720,6 +4017,8 @@ export default function FinanceApp() {
       {showAcctModal    && <AccountModal account={modalAccount}  accounts={accounts} onSave={saveAccount}  onClose={()=>{setShowAcctModal(false);setModalAccount(null);}}/>}
       {showRuleModal    && <RuleModal    rule={modalRule}        accounts={activeAccounts}   onSave={saveRule}    onClose={()=>{setShowRuleModal(false);setModalRule(null);}}/>}
       {reconAccount     && <ReconcileModal account={reconAccount} transactions={transactions}
+        manualJEs={manualJEs} accounts={accounts}
+        onUpdate={(id,fields)=>setTransactions(prev=>prev.map(t=>t.id===id?{...t,...fields}:t))}
         onComplete={completeReconciliation} onClose={()=>setReconAccount(null)}/>}
       {showThemeEditor  && <CustomThemeModal currentTheme={theme}
         onSave={t=>{ if(t){setCustomTheme(t);setThemeName("Custom");}else{setCustomTheme(null);setThemeName("Obsidian");} }}
@@ -3727,6 +4026,8 @@ export default function FinanceApp() {
       {showReportThemeEditor && <ReportThemeModal currentTheme={customReportTheme}
         onSave={t=>{ setCustomReportTheme(t||null); }}
         onClose={()=>setShowReportThemeEditor(false)}/>}
+      {splitTxn && <SplitModal transaction={splitTxn} accounts={activeAccounts}
+        onSave={saveSplit} onClose={()=>setSplitTxn(null)}/>}
       {drillAccount     && <DrillModal   account={drillAccount}  transactions={transactions} manualJEs={manualJEs} allAccounts={accounts} startDate={startDate} endDate={endDate} onClose={()=>setDrillAccount(null)} onUpdate={updateTxn} onDelete={deleteTxn} onExclude={(id)=>setExcludedTxns(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n;})} excludedTxns={excludedTxns}
         onEditJE={jeOrAction=>{
           if (jeOrAction?._delete) {
