@@ -31,7 +31,7 @@ const THEMES = {
     text:"#f2ede8",text2:"#9e8e82",text3:"#5c4e45",
     red:"#e05252",green:"#6dbf67",blue:"#6ab0d4",amber:"#f4a35a",purple:"#b994c8",
   },
-  "Tree": {
+  "Forest": {
     bg:"#0d120e",surface:"#141a14",surface2:"#1a231b",surface3:"#202b21",
     border:"#2a3a2b",border2:"#3a4e3c",
     accent:"#6fcf7e",accent2:"#4db85e",
@@ -2231,9 +2231,11 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onCl
 // ─────────────────────────────────────────────────────────────────────────────
 // TREND REPORT
 // ─────────────────────────────────────────────────────────────────────────────
-function TrendReport({ type, accounts, transactions, excludedTxns, startDate, endDate, period, onDrill, rTheme }) {
+function TrendReport({ type, accounts, transactions, excludedTxns, startDate, endDate, period, onDrill, rTheme, reportNames }) {
   const rt = rTheme || DEFAULT_REPORT_THEME;
   const acctById = Object.fromEntries(accounts.map(a=>[a.id,a]));
+  const [colWidths, setColWidths] = useState({});
+  const COL_W = 110; // default column width
 
   const txns = useMemo(()=>
     transactions.filter(t=>t.accountId&&!excludedTxns?.has(t.id)&&inRange(t.date,startDate,endDate))
@@ -2244,7 +2246,7 @@ function TrendReport({ type, accounts, transactions, excludedTxns, startDate, en
     return [...keys].sort();
   },[txns,period]);
 
-  // acctId -> periodKey -> net balance impact
+  // acctId -> periodKey -> balance
   const balMap = useMemo(()=>{
     const m={};
     accounts.forEach(a=>{m[a.id]={};});
@@ -2262,62 +2264,143 @@ function TrendReport({ type, accounts, transactions, excludedTxns, startDate, en
     return m;
   },[txns,period,accounts,acctById]);
 
-  const col=(id,p)=>balMap[id]?.[p]||0;
-  const rowTotal=(id)=>periods.reduce((s,p)=>s+col(id,p),0);
-  const grpCol=(accts,p)=>accts.reduce((s,a)=>s+col(a.id,p),0);
-  const grpTotal=(accts)=>periods.reduce((s,p)=>s+grpCol(accts,p),0);
+  const colVal  = (id,p) => balMap[id]?.[p]||0;
+  const subtreeCol = (id,p) => {
+    const own = colVal(id,p);
+    const childTotal = accounts.filter(a=>(a.parentId||"")===id).reduce((s,c)=>s+subtreeColFn(c.id,p),0);
+    return own + childTotal;
+  };
+  // Need a named function for recursion
+  const subtreeColFn = (id,p) => {
+    const own = colVal(id,p);
+    const childTotal = accounts.filter(a=>(a.parentId||"")===id).reduce((s,c)=>s+subtreeColFn(c.id,p),0);
+    return own + childTotal;
+  };
+  const subtreeTotal = (id) => periods.reduce((s,p)=>s+subtreeColFn(id,p),0);
+  const grpRootCol   = (rootAccts,p) => rootAccts.reduce((s,a)=>s+subtreeColFn(a.id,p),0);
+  const grpRootTotal = (rootAccts)   => periods.reduce((s,p)=>s+grpRootCol(rootAccts,p),0);
 
-  const C=({n,neg,rt:r})=>{
-    const color = n>0?(neg?(r||rt).neg:(r||rt).pos):n<0?(neg?(r||rt).pos:(r||rt).neg):(r||rt).rowText;
-    return <td style={{color,borderColor:(r||rt).border}}>{n!==0?fmt(Math.abs(n)):""}</td>;
+  const resizeCol = (p, startX, startW) => {
+    const onMove = e => setColWidths(prev=>({...prev,[p]:Math.max(60,startW+(e.clientX-startX))}));
+    const onUp   = () => { document.removeEventListener("mousemove",onMove); document.removeEventListener("mouseup",onUp); };
+    document.addEventListener("mousemove",onMove);
+    document.addEventListener("mouseup",onUp);
+  };
+
+  const thStyle = (p) => ({
+    background:rt.subtotalBg, color:rt.subtotalText, borderColor:rt.border,
+    textAlign:"right", fontFamily:"DM Mono,monospace", fontSize:11,
+    fontWeight:700, padding:"8px 10px", whiteSpace:"nowrap",
+    width: colWidths[p]||COL_W, minWidth: colWidths[p]||COL_W,
+    position:"relative", userSelect:"none",
+  });
+
+  const valStyle = (n, neg) => ({
+    textAlign:"right", fontFamily:"DM Mono,monospace", fontSize:12, padding:"4px 10px",
+    borderBottom:`1px solid ${rt.border}`, borderColor:rt.border,
+    color: n===0 ? rt.rowText : (n>0 ? (neg?rt.neg:rt.pos) : (neg?rt.pos:rt.neg)),
+  });
+
+  const subtotalValStyle = (n, neg) => ({
+    ...valStyle(n,neg), fontWeight:700, color: n===0 ? rt.subtotalText : (n>0?(neg?rt.neg:rt.pos):(neg?rt.pos:rt.neg)),
+  });
+
+  // Render tree rows for trend view
+  const renderTrendTree = (typeAccts, parentId, depth, neg) => {
+    return typeAccts
+      .filter(a => (a.parentId||"") === (parentId||""))
+      .flatMap(a => {
+        const total = subtreeTotal(a.id);
+        if (periods.every(p=>subtreeColFn(a.id,p)===0) && total===0) return [];
+        const hasChildren = typeAccts.some(c=>(c.parentId||"")===a.id);
+        const indent = depth * 14;
+        const nameStyle = {
+          color: hasChildren ? rt.sectionText : rt.rowText,
+          fontWeight: hasChildren ? 600 : 400,
+          paddingLeft: 32 + indent,
+          fontSize: 12, padding: `4px 10px 4px ${32+indent}px`,
+          borderBottom:`1px solid ${rt.border}`,
+          cursor:"pointer", fontFamily:"DM Sans,sans-serif",
+        };
+        return [
+          <tr key={a.id} onClick={()=>onDrill&&onDrill(a)} style={{background:depth===0&&hasChildren?rt.sectionBg:rt.bg}}>
+            <td style={nameStyle}>{depth>0?"└ ":""}{a.name}</td>
+            {periods.map(p=>{const v=subtreeColFn(a.id,p);return <td key={p} style={valStyle(v,neg)}>{v!==0?fmt(Math.abs(v)):""}</td>;})}
+            <td style={valStyle(total,neg)}>{total!==0?fmt(Math.abs(total)):""}</td>
+          </tr>,
+          ...renderTrendTree(typeAccts, a.id, depth+1, neg),
+        ];
+      });
   };
 
   const groups = type==="pnl"
-    ? [{lbl:"Revenue",accts:accounts.filter(a=>a.type==="Revenue"),neg:false,tot:"Total Revenue"},
-       {lbl:"Expenses",accts:accounts.filter(a=>a.type==="Expense"),neg:true,tot:"Total Expenses"}]
-    : [{lbl:"Assets",accts:accounts.filter(a=>a.type==="Asset"),neg:false,tot:"Total Assets"},
-       {lbl:"Liabilities",accts:accounts.filter(a=>a.type==="Liability"),neg:true,tot:"Total Liabilities"},
-       {lbl:"Net Worth",accts:accounts.filter(a=>a.type==="Equity"),neg:false,tot:"Total Net Worth"}];
+    ? [{lbl:"Income",   typeKey:"Revenue", neg:false, tot:"Total Income"},
+       {lbl:"Expenses", typeKey:"Expense", neg:true,  tot:"Total Expenses"}]
+    : [{lbl:"Assets",   typeKey:"Asset",    neg:false, tot:"Total Assets"},
+       {lbl:"Liabilities",typeKey:"Liability",neg:true, tot:"Total Liabilities"},
+       {lbl:"Net Worth",typeKey:"Equity",   neg:false, tot:"Total Net Worth"}];
 
   if(periods.length===0) return <div className="empty"><div className="empty-icon">📊</div><div className="empty-title">No data in selected range</div></div>;
 
+  const dateLabel = startDate||endDate ? `${startDate||"start"} → ${endDate||"today"}` : "All Periods";
+
   return (
-    <div className="trend-wrap" style={{borderColor:rt.border}}>
-      <table className="trend-table" style={{background:rt.bg}}>
+    <div className="qb-report" style={{background:rt.bg,borderColor:rt.border,overflowX:"auto"}}>
+      <div className="qb-header" style={{background:rt.headerBg,borderColor:rt.border}}>
+        <div className="qb-co" style={{color:rt.headerText}}>{reportNames?.company||"My Company"}</div>
+        <div className="qb-title" style={{color:rt.headerText}}>{reportNames?.[type==="pnl"?"pnl":"balance"]||""}</div>
+        <div className="qb-date" style={{color:rt.headerText}}>{dateLabel}</div>
+      </div>
+      <table style={{width:"100%",borderCollapse:"collapse",background:rt.bg}}>
         <thead>
           <tr>
-            <th style={{textAlign:"left",background:rt.subtotalBg,color:rt.subtotalText,borderColor:rt.border}}>Account</th>
-            {periods.map(p=><th key={p} style={{background:rt.subtotalBg,color:rt.subtotalText,borderColor:rt.border}}>{formatPeriodKey(p,period)}</th>)}
-            <th style={{background:rt.subtotalBg,color:rt.subtotalText,borderColor:rt.border}}>Total</th>
+            <th style={{...thStyle("name"),textAlign:"left",width:"auto",minWidth:160,paddingLeft:32}}>Account</th>
+            {periods.map(p=>(
+              <th key={p} style={thStyle(p)}>
+                {formatPeriodKey(p,period)}
+                <div style={{position:"absolute",right:0,top:0,bottom:0,width:5,cursor:"col-resize",zIndex:1}}
+                  onMouseDown={e=>{e.preventDefault();resizeCol(p,e.clientX,colWidths[p]||COL_W);}}/>
+              </th>
+            ))}
+            <th style={{...thStyle("total"),position:"relative"}}>
+              Total
+              <div style={{position:"absolute",right:0,top:0,bottom:0,width:5,cursor:"col-resize",zIndex:1}}
+                onMouseDown={e=>{e.preventDefault();resizeCol("total",e.clientX,colWidths["total"]||COL_W);}}/>
+            </th>
           </tr>
         </thead>
         <tbody>
-          {groups.map(g=>(
-            <React.Fragment key={g.lbl}>
-              <tr className="trend-group" style={{background:rt.sectionBg}}>
-                <td colSpan={periods.length+2} style={{color:rt.sectionText,borderColor:rt.border}}>{g.lbl}</td>
-              </tr>
-              {g.accts.map(a=>(
-                <tr key={a.id} className="trend-indent" style={{cursor:"pointer",background:rt.bg}} onClick={()=>onDrill&&onDrill(a)}>
-                  <td style={{color:rt.rowText,borderColor:rt.border}}>{a.name}</td>
-                  {periods.map(p=><C key={p} n={col(a.id,p)} neg={g.neg} rt={rt}/>)}
-                  <C n={rowTotal(a.id)} neg={g.neg} rt={rt}/>
-                </tr>
-              ))}
-              <tr className="trend-total" style={{background:rt.subtotalBg}}>
-                <td style={{color:rt.subtotalText,borderColor:rt.border}}>{g.tot}</td>
-                {periods.map(p=><C key={p} n={grpCol(g.accts,p)} neg={g.neg} rt={rt}/>)}
-                <C n={grpTotal(g.accts)} neg={g.neg} rt={rt}/>
-              </tr>
-            </React.Fragment>
-          ))}
-          {type==="pnl"&&(()=>{
-            const [rev,exp]=groups;
+          {groups.map(g=>{
+            const typeAccts = accounts.filter(a=>a.type===g.typeKey&&!a.inactive);
+            const rootAccts = typeAccts.filter(a=>!a.parentId||(a.parentId===""));
+            const totP = p => grpRootCol(rootAccts,p);
+            const totAll = grpRootTotal(rootAccts);
             return (
-              <tr className="trend-grand" style={{background:rt.grandBg}}>
-                <td style={{color:rt.grandText,borderColor:rt.border}}>Net Income</td>
-                {periods.map(p=>{const ni=grpCol(rev.accts,p)-grpCol(exp.accts,p);return <td key={p} style={{color:ni>=0?rt.pos:rt.neg,borderColor:rt.border}}>{fmt(ni)}</td>;})}
-                {(()=>{const ni=grpTotal(rev.accts)-grpTotal(exp.accts);return <td style={{color:ni>=0?rt.pos:rt.neg,borderColor:rt.border}}>{fmt(ni)}</td>;})()}
+              <React.Fragment key={g.lbl}>
+                <tr style={{background:rt.sectionBg}}>
+                  <td colSpan={periods.length+2} style={{padding:"8px 32px",fontSize:12,fontWeight:700,color:rt.sectionText,borderBottom:`1px solid ${rt.border}`}}>{g.lbl}</td>
+                </tr>
+                {renderTrendTree(typeAccts,"",0,g.neg)}
+                <tr style={{background:rt.subtotalBg}}>
+                  <td style={{padding:"5px 10px 5px 32px",fontSize:12,fontWeight:700,color:rt.subtotalText,borderBottom:`1px solid ${rt.border}`}}>{g.tot}</td>
+                  {periods.map(p=>{const v=totP(p);return <td key={p} style={subtotalValStyle(v,g.neg)}>{v!==0?fmt(Math.abs(v)):""}</td>;})}
+                  <td style={subtotalValStyle(totAll,g.neg)}>{totAll!==0?fmt(Math.abs(totAll)):""}</td>
+                </tr>
+                <tr style={{background:rt.bg}}><td colSpan={periods.length+2} style={{height:8}}></td></tr>
+              </React.Fragment>
+            );
+          })}
+          {type==="pnl"&&(()=>{
+            const revAccts = accounts.filter(a=>a.type==="Revenue"&&!a.inactive&&(!a.parentId||a.parentId===""));
+            const expAccts = accounts.filter(a=>a.type==="Expense"&&!a.inactive&&(!a.parentId||a.parentId===""));
+            return (
+              <tr style={{background:rt.grandBg}}>
+                <td style={{padding:"6px 10px 6px 32px",fontSize:12,fontWeight:700,color:rt.grandText,borderTop:`1px solid ${rt.border}`}}>Net Income</td>
+                {periods.map(p=>{
+                  const ni=grpRootCol(revAccts,p)-grpRootCol(expAccts,p);
+                  return <td key={p} style={{...valStyle(ni,false),fontWeight:700,borderTop:`1px solid ${rt.border}`,color:ni>=0?rt.pos:rt.neg}}>{fmt(Math.abs(ni))}</td>;
+                })}
+                {(()=>{const ni=grpRootTotal(revAccts)-grpRootTotal(expAccts);return <td style={{...valStyle(ni,false),fontWeight:700,borderTop:`1px solid ${rt.border}`,color:ni>=0?rt.pos:rt.neg}}>{fmt(Math.abs(ni))}</td>;})()}
               </tr>
             );
           })()}
@@ -2929,7 +3012,7 @@ function EditableField({ value, onChange, style={}, className="" }) {
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function FinanceApp() {
-  const [page,           setPage]          = useState("import");
+  const [page,           setPage]          = useState("classify");
   const [transactions,   setTransactions]  = useState([]);
   const [sources,        setSources]       = useState([]);
   const [activeSrcId,    setActiveSrcId]   = useState("all");
@@ -2946,6 +3029,7 @@ export default function FinanceApp() {
   const [showCoaInactive,setShowCoaInactive]= useState(false);
   const [trendMode,      setTrendMode]     = useState("standard");
   const [trendPeriod,    setTrendPeriod]   = useState("month");
+  const [reportColWidth, setReportColWidth] = useState(140);
   const [excludedTxns,   setExcludedTxns]  = useState(new Set());
   const [reconciliations, setReconciliations] = useState({});
   const [reconAccount,    setReconAccount]    = useState(null);
@@ -3232,6 +3316,7 @@ export default function FinanceApp() {
   // ── Render ────────────────────────────────────────────────────────────────
   const theme = customTheme || THEMES[themeName] || THEMES["Obsidian"];
   const rTheme = {...DEFAULT_REPORT_THEME, ...(customReportTheme||{})};
+  const rColStyle = {minWidth:reportColWidth, width:reportColWidth};
 
   // Recursive tree renderer for reports
   // Computes subtree balance (own + all descendants) so parents show even if own balance is 0
@@ -3249,8 +3334,9 @@ export default function FinanceApp() {
     return children.flatMap(a => {
       const sub = subtreeBalance(allAccounts, a.id);
       if (sub === 0) return [];
-      const subChildren = allAccounts.filter(c => (c.parentId||"") === a.id);
-      const hasVisibleChildren = subChildren.some(c => subtreeBalance(allAccounts, c.id) !== 0);
+      const hasVisibleChildren = allAccounts
+        .filter(c => (c.parentId||"") === a.id)
+        .some(c => subtreeBalance(allAccounts, c.id) !== 0);
       const indent = depth * 14;
       return [
         <div key={a.id} className={`qb-row l${Math.min(depth+1,3)}${hasVisibleChildren?" qb-parent-row":""}`}
@@ -3258,7 +3344,7 @@ export default function FinanceApp() {
           <span className="qb-label" style={indent?{paddingLeft:indent}:{}}>
             {depth>0?"└ ":""}{a.name}<span className="qb-hint">▸</span>
           </span>
-          <span className={`qb-val${sub>0?` ${posClass}`:sub<0?` ${negClass}`:""}`}>{fmt(sub)}</span>
+          <span style={rColStyle} className={`qb-val${sub>0?` ${posClass}`:sub<0?` ${negClass}`:""}`}>{fmt(sub)}</span>
         </div>,
         ...renderAccountTree(allAccounts, a.id, depth+1, posClass, negClass),
       ];
@@ -3859,7 +3945,7 @@ export default function FinanceApp() {
                       <EditableField value={reportNames.pnl} className="qb-title" onChange={v=>setReportNames(p=>({...p,pnl:v}))}/>
                       <div className="qb-date">{dateLabel}</div>
                     </div>
-                    <div className="qb-col-heads"><div className="qb-col-head">Total</div></div>
+                    <div className="qb-col-heads"><div className="qb-col-head" style={{minWidth:reportColWidth,cursor:"col-resize",userSelect:"none"}} onMouseDown={e=>{e.preventDefault();const sx=e.clientX,sw=reportColWidth;const mm=e=>setReportColWidth(Math.max(80,sw+(e.clientX-sx)));const mu=()=>{document.removeEventListener("mousemove",mm);document.removeEventListener("mouseup",mu);};document.addEventListener("mousemove",mm);document.addEventListener("mouseup",mu);}}>Total ⟺</div></div>
 
                     <div className="qb-section">Income</div>
                     {renderAccountTree(revenues, "", 0, "pos", "neg")}
@@ -3868,7 +3954,7 @@ export default function FinanceApp() {
                     )}
                     <div className="qb-subtotal l1">
                       <span className="qb-subtotal-label">Total Income</span>
-                      <span className={`qb-subtotal-val${totalRevenue>0?" pos":""}`}>{fmt(totalRevenue)}</span>
+                      <span style={rColStyle} className={`qb-subtotal-val${totalRevenue>0?" pos":""}`}>{fmt(totalRevenue)}</span>
                     </div>
 
                     <div className="qb-space"/>
@@ -3879,19 +3965,19 @@ export default function FinanceApp() {
                     )}
                     <div className="qb-subtotal l1">
                       <span className="qb-subtotal-label">Total Expenses</span>
-                      <span className={`qb-subtotal-val${totalExpenses>0?" neg":""}`}>{fmt(totalExpenses)}</span>
+                      <span style={rColStyle} className={`qb-subtotal-val${totalExpenses>0?" neg":""}`}>{fmt(totalExpenses)}</span>
                     </div>
 
                     <div className="qb-space"/>
                     <div className="qb-grand">
                       <span className="qb-grand-label">Net Income</span>
-                      <span className={`qb-grand-val${netIncome>=0?" pos":" neg"}`}>{fmt(netIncome)}</span>
+                      <span style={rColStyle} className={`qb-grand-val${netIncome>=0?" pos":" neg"}`}>{fmt(netIncome)}</span>
                     </div>
                   </div>
                 ) : (
                   <TrendReport type="pnl" accounts={accounts} transactions={transactions}
                     excludedTxns={excludedTxns} startDate={startDate} endDate={endDate}
-                    period={trendPeriod} onDrill={setDrillAccount} rTheme={rTheme}/>
+                    period={trendPeriod} onDrill={setDrillAccount} rTheme={rTheme} reportNames={reportNames}/>
                 )}
               </>
             )}
@@ -3931,14 +4017,14 @@ export default function FinanceApp() {
                       <EditableField value={reportNames.balance} className="qb-title" onChange={v=>setReportNames(p=>({...p,balance:v}))}/>
                       <div className="qb-date">{endDate?`As of ${endDate}`:"All Periods"}</div>
                     </div>
-                    <div className="qb-col-heads"><div className="qb-col-head">Total</div></div>
+                    <div className="qb-col-heads"><div className="qb-col-head" style={{minWidth:reportColWidth,cursor:"col-resize",userSelect:"none"}} onMouseDown={e=>{e.preventDefault();const sx=e.clientX,sw=reportColWidth;const mm=e=>setReportColWidth(Math.max(80,sw+(e.clientX-sx)));const mu=()=>{document.removeEventListener("mousemove",mm);document.removeEventListener("mouseup",mu);};document.addEventListener("mousemove",mm);document.addEventListener("mouseup",mu);}}>Total ⟺</div></div>
 
                     {/* ASSETS */}
                     <div className="qb-section">Assets</div>
                     {renderAccountTree(assets, "", 0, "pos", "neg")}
                     <div className="qb-subtotal">
                       <span className="qb-subtotal-label" style={{fontWeight:700,textTransform:"uppercase",fontSize:12}}>Total Assets</span>
-                      <span className={`qb-subtotal-val${totalAssets>0?" pos":""}`}>{fmt(totalAssets)}</span>
+                      <span style={rColStyle} className={`qb-subtotal-val${totalAssets>0?" pos":""}`}>{fmt(totalAssets)}</span>
                     </div>
 
                     <div className="qb-space"/><div className="qb-space"/>
@@ -3949,7 +4035,7 @@ export default function FinanceApp() {
                     {renderAccountTree(liabilities, "", 0, "neg", "pos")}
                     <div className="qb-subtotal l1">
                       <span className="qb-subtotal-label">Total Liabilities</span>
-                      <span className={`qb-subtotal-val${totalLiabilities>0?" neg":""}`}>{fmt(totalLiabilities)}</span>
+                      <span style={rColStyle} className={`qb-subtotal-val${totalLiabilities>0?" neg":""}`}>{fmt(totalLiabilities)}</span>
                     </div>
 
                     <div className="qb-space"/>
@@ -3973,7 +4059,7 @@ export default function FinanceApp() {
                 ) : (
                   <TrendReport type="balance" accounts={accounts} transactions={transactions}
                     excludedTxns={excludedTxns} startDate={startDate} endDate={endDate}
-                    period={trendPeriod} onDrill={setDrillAccount} rTheme={rTheme}/>
+                    period={trendPeriod} onDrill={setDrillAccount} rTheme={rTheme} reportNames={reportNames}/>
                 )}
               </>
             )}
@@ -4008,7 +4094,7 @@ export default function FinanceApp() {
                         }
                         <div className="qb-subtotal l1">
                           <span className="qb-subtotal-label">Net Cash — {sec.name} Activities</span>
-                          <span className={`qb-subtotal-val${total>=0?" pos":" neg"}`}>{fmt(total)}</span>
+                          <span style={rColStyle} className={`qb-subtotal-val${total>=0?" pos":" neg"}`}>{fmt(total)}</span>
                         </div>
                         <div className="qb-space"/>
                       </React.Fragment>
@@ -4019,7 +4105,7 @@ export default function FinanceApp() {
                     return (
                       <div className="qb-grand">
                         <span className="qb-grand-label">Net Change in Cash</span>
-                        <span className={`qb-grand-val${nc>=0?" pos":" neg"}`}>{fmt(nc)}</span>
+                        <span style={rColStyle} className={`qb-grand-val${nc>=0?" pos":" neg"}`}>{fmt(nc)}</span>
                       </div>
                     );
                   })()}
