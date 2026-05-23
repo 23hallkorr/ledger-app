@@ -3366,22 +3366,23 @@ export default function FinanceApp() {
   // ── Load from server on startup, fall back to localStorage ──────────────
   useEffect(() => {
     const applyData = (d) => {
-      if (d.transactions)    setTransactions(d.transactions);
-      if (d.accounts)        setAccounts(d.accounts.map(a=>({
+      // Only apply arrays if they have content — never overwrite good data with empty arrays
+      if (d.transactions?.length)  setTransactions(d.transactions);
+      if (d.accounts?.length)      setAccounts(d.accounts.map(a=>({
         ...a,
         parentId: (!a.parentId || a.parentId === "null" || a.parentId === "undefined") ? "" : a.parentId,
       })));
-      if (d.sources)         setSources(d.sources);
-      if (d.rules)           setRules(d.rules);
-      if (d.manualJEs)       setManualJEs(d.manualJEs);
-      if (d.accountOrder)    setAccountOrder(d.accountOrder);
-      if (d.reportNames)     setReportNames(d.reportNames);
-      if (d.reconciliations) setReconciliations(d.reconciliations);
-      if (d.customTheme)     setCustomTheme(d.customTheme);
-      if (d.themeName)       setThemeName(d.themeName);
+      if (d.sources?.length)       setSources(d.sources);
+      if (d.rules?.length)         setRules(d.rules);
+      if (d.manualJEs?.length)     setManualJEs(d.manualJEs);
+      if (d.accountOrder)          setAccountOrder(d.accountOrder);
+      if (d.reportNames)           setReportNames(d.reportNames);
+      if (d.reconciliations && Object.keys(d.reconciliations).length) setReconciliations(d.reconciliations);
+      if (d.customTheme)           setCustomTheme(d.customTheme);
+      if (d.themeName)             setThemeName(d.themeName);
       if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
-      if (d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
-      if (d.customReportTheme) setCustomReportTheme(d.customReportTheme);
+      if (d.excludedTxns?.length)  setExcludedTxns(new Set(d.excludedTxns));
+      if (d.customReportTheme)     setCustomReportTheme(d.customReportTheme);
       setDataLoaded(true);
     };
     fetch(`${API}/api/data`)
@@ -3396,22 +3397,30 @@ export default function FinanceApp() {
       });
   }, []);
 
-  // ── Save to server (debounced 1s) + localStorage backup ──────────────────
+  // ── Save to server (debounced 1s) ─────────────────────────────────────────
+  // localStorage is NOT used as a save target — server is the source of truth.
+  // localStorage is only written as an emergency backup after a successful server save.
   useEffect(() => {
-    if (!dataLoaded) return; // don't save until data has been loaded
+    if (!dataLoaded) return;
+    // Never save if core data is empty — protects against race conditions
+    if (!accounts.length && !transactions.length) return;
     const payload = {
       transactions, accounts, sources, rules, manualJEs,
       accountOrder, reportNames, reconciliations, customTheme,
       themeName, showCoaInactive, excludedTxns: [...excludedTxns],
       customReportTheme,
     };
-    try { localStorage.setItem("ledger_data", JSON.stringify(payload)); } catch(e) {}
     const tid = setTimeout(() => {
       fetch(`${API}/api/data`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      }).catch(e => console.warn("Could not save to server:", e));
+      })
+      .then(() => {
+        // Only update localStorage after a successful server save
+        try { localStorage.setItem("ledger_data", JSON.stringify(payload)); } catch(e) {}
+      })
+      .catch(e => console.warn("Could not save to server:", e));
     }, 1000);
     return () => clearTimeout(tid);
   }, [dataLoaded, transactions, accounts, sources, rules, manualJEs, accountOrder,
