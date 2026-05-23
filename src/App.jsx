@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
-const API = "ledger-server-production.up.railway.app";
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STYLES
@@ -2868,11 +2868,12 @@ export default function FinanceApp() {
     pnl:reportNames.pnl, balance:reportNames.balance, cashflow:reportNames.cashflow,
   };
 
-  // ── Load from server on startup ──────────────────────────────────────────
+  // ── Load from localStorage on startup ────────────────────────────────────
   useEffect(() => {
-    fetch(`${API}/api/data`)
-      .then(r => r.json())
-      .then(d => {
+    try {
+      const saved = localStorage.getItem("ledger_data");
+      if (saved) {
+        const d = JSON.parse(saved);
         if (d.transactions)    setTransactions(d.transactions);
         if (d.accounts)        setAccounts(d.accounts);
         if (d.sources)         setSources(d.sources);
@@ -2885,59 +2886,64 @@ export default function FinanceApp() {
         if (d.themeName)       setThemeName(d.themeName);
         if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
         if (d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
-      })
-      .catch(e => {
-        console.warn("Could not load from server, falling back to localStorage:", e);
-        try {
-          const saved = localStorage.getItem("ledger_data");
-          if (saved) {
-            const d = JSON.parse(saved);
-            if (d.transactions)    setTransactions(d.transactions);
-            if (d.accounts)        setAccounts(d.accounts);
-            if (d.sources)         setSources(d.sources);
-            if (d.rules)           setRules(d.rules);
-            if (d.manualJEs)       setManualJEs(d.manualJEs);
-            if (d.accountOrder)    setAccountOrder(d.accountOrder);
-            if (d.reportNames)     setReportNames(d.reportNames);
-            if (d.reconciliations) setReconciliations(d.reconciliations);
-            if (d.customTheme)     setCustomTheme(d.customTheme);
-            if (d.themeName)       setThemeName(d.themeName);
-            if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
-            if (d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
-          }
-        } catch(le) { console.warn("localStorage fallback also failed:", le); }
-      });
+      }
+    } catch(e) { console.warn("Could not load saved data:", e); }
   }, []);
 
-  // ── Save to server (debounced 1s) + localStorage backup ──────────────────
+  // ── Save to localStorage on every change ─────────────────────────────────
   useEffect(() => {
-    const payload = {
-      transactions,
-      accounts,
-      sources,
-      rules,
-      manualJEs,
-      accountOrder,
-      reportNames,
-      reconciliations,
-      customTheme,
-      themeName,
-      showCoaInactive,
-      excludedTxns: [...excludedTxns],
-    };
-    // Always keep localStorage as a backup
-    try { localStorage.setItem("ledger_data", JSON.stringify(payload)); } catch(e) {}
-    // Debounce server save by 1 second
-    const tid = setTimeout(() => {
-      fetch(`${API}/api/data`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }).catch(e => console.warn("Could not save to server:", e));
-    }, 1000);
-    return () => clearTimeout(tid);
+    try {
+      localStorage.setItem("ledger_data", JSON.stringify({
+        transactions, accounts, sources, rules, manualJEs,
+        accountOrder, reportNames, reconciliations, customTheme,
+        themeName, showCoaInactive, excludedTxns: [...excludedTxns],
+      }));
+    } catch(e) { console.warn("Could not save data:", e); }
   }, [transactions, accounts, sources, rules, manualJEs, accountOrder,
       reportNames, reconciliations, customTheme, themeName, showCoaInactive, excludedTxns]);
+
+  // ── Export all data to a JSON file ────────────────────────────────────────
+  const exportData = () => {
+    const payload = {
+      transactions, accounts, sources, rules, manualJEs,
+      accountOrder, reportNames, reconciliations, customTheme,
+      themeName, showCoaInactive, excludedTxns: [...excludedTxns],
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `ledger-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Import data from a JSON file ─────────────────────────────────────────
+  const importData = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (d.transactions)    setTransactions(d.transactions);
+        if (d.accounts)        setAccounts(d.accounts);
+        if (d.sources)         setSources(d.sources);
+        if (d.rules)           setRules(d.rules);
+        if (d.manualJEs)       setManualJEs(d.manualJEs);
+        if (d.accountOrder)    setAccountOrder(d.accountOrder);
+        if (d.reportNames)     setReportNames(d.reportNames);
+        if (d.reconciliations) setReconciliations(d.reconciliations);
+        if (d.customTheme)     setCustomTheme(d.customTheme);
+        if (d.themeName)       setThemeName(d.themeName);
+        if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
+        if (d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
+        alert("Data imported successfully!");
+      } catch(err) { alert("Could not read file. Make sure it's a valid ledger backup."); }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
   // Ensure correct viewport on mobile
   useEffect(() => {
     let meta = document.querySelector('meta[name="viewport"]');
@@ -3023,6 +3029,13 @@ export default function FinanceApp() {
             <div className="txn-count"><span>{transactions.length}</span> transactions</div>
             <div className="txn-count" style={{marginTop:2}}>
               <span style={{color:unclassifiedCount>0?"var(--amber)":"var(--green)"}}>{unclassifiedCount}</span> uncategorized
+            </div>
+            <div style={{display:"flex",gap:6,marginTop:10}}>
+              <button className="btn" style={{flex:1,fontSize:11,padding:"5px 0"}} onClick={exportData} title="Download a backup of all your data">⬇ Export</button>
+              <label className="btn" style={{flex:1,fontSize:11,padding:"5px 0",textAlign:"center",cursor:"pointer"}} title="Restore from a previous backup">
+                ⬆ Import
+                <input type="file" accept=".json" style={{display:"none"}} onChange={importData}/>
+              </label>
             </div>
           </div>
           <div className="theme-picker">
