@@ -16,6 +16,7 @@ model Transaction {
   sourceId        String?
   transferMatchId String?
   reconciled      Boolean  @default(false)
+  reconciledAccts String[] @default([])
   excluded        Boolean  @default(false)
   splits          Json?
   createdAt       DateTime @default(now())
