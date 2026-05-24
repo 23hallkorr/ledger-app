@@ -3647,7 +3647,21 @@ export default function FinanceApp() {
   useEffect(()=>{
     fetch(`${API}/api/plaid/accounts`)
       .then(r=>r.json())
-      .then(d=>{ if(d.accounts) setPlaidAccounts(d.accounts); })
+      .then(d=>{
+        if(d.accounts) {
+          setPlaidAccounts(d.accounts);
+          // Remap any transactions whose sourceId is a plaidAccountId to the COA mappedToId
+          const remapTable = {};
+          d.accounts.forEach(pa => {
+            if (pa.mappedToId) remapTable[pa.plaidAccountId] = pa.mappedToId;
+          });
+          if (Object.keys(remapTable).length) {
+            setTransactions(prev => prev.map(t =>
+              remapTable[t.sourceId] ? {...t, sourceId: remapTable[t.sourceId]} : t
+            ));
+          }
+        }
+      })
       .catch(()=>{});
   },[]);
 

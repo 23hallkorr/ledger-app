@@ -90,13 +90,15 @@ app.post("/api/plaid/sync", async (req, res) => {
       cursor   = data.next_cursor;
     }
     await prisma.plaidAccount.update({ where: { plaidAccountId }, data: { cursor } });
+    // Use mappedToId as sourceId so transactions appear under the correct COA account tab
+    const sourceId = pa.mappedToId || plaidAccountId;
     const txns = added.map(t => ({
       id:          `plaid-${t.transaction_id}`,
       date:        t.date,
       description: t.merchant_name || t.name || "",
       amount:      -(t.amount),
       accountId:   null,
-      sourceId:    plaidAccountId,
+      sourceId:    sourceId,
       reconciled:  false,
       excluded:    false,
       splits:      null,
