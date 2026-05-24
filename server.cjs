@@ -13,7 +13,6 @@ app.use((req, res, next) => {
   console.log(`${req.method} ${req.path} — ${new Date().toISOString()}`);
   if (req.method === "POST" && req.path === "/api/data") {
     console.log(`  POST /api/data — txns:${req.body?.transactions?.length ?? "?"} accounts:${req.body?.accounts?.length ?? "?"}`);
-    // Log the call stack source (from headers if available)
     console.log(`  Origin: ${req.headers.origin || "unknown"}`);
   }
   next();
@@ -121,6 +120,38 @@ app.get("/api/plaid/accounts", async (req, res) => {
   }
 });
 
+// ── Plaid: fetch live balances for all mapped accounts ────────────────────────
+app.get("/api/plaid/balances", async (req, res) => {
+  try {
+    const accounts = await prisma.plaidAccount.findMany({
+      where: { mappedToId: { not: null } },
+      select: { plaidAccountId: true, mappedToId: true, accessToken: true },
+    });
+
+    const balances = [];
+    for (const pa of accounts) {
+      try {
+        const response = await plaid.accountsBalanceGet({ access_token: pa.accessToken });
+        const account = response.data.accounts.find(a => a.account_id === pa.plaidAccountId);
+        if (account) {
+          balances.push({
+            plaidAccountId: pa.plaidAccountId,
+            mappedToId:     pa.mappedToId,
+            current:        account.balances.current,
+            available:      account.balances.available,
+            name:           account.name,
+          });
+        }
+      } catch (e) {
+        console.warn(`Balance fetch failed for ${pa.plaidAccountId}:`, e.message);
+      }
+    }
+    res.json({ balances });
+  } catch (e) {
+    console.error("Balance fetch error:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ── Plaid: save account mapping ───────────────────────────────────────────────
 app.post("/api/plaid/map", async (req, res) => {
@@ -146,6 +177,7 @@ app.delete("/api/plaid/accounts/:plaidAccountId", async (req, res) => {
   }
 });
 
+// ── GET /api/data ─────────────────────────────────────────────────────────────
 app.get("/api/data", async (req, res) => {
   try {
     const [transactions, accounts, sources, rules, manualJEs, reconciliationRows, settings] =
@@ -158,14 +190,19 @@ app.get("/api/data", async (req, res) => {
         prisma.reconciliation.findMany(),
         prisma.setting.findMany(),
       ]);
+
     console.log(`  GET /api/data — returning txns:${transactions.length} accounts:${accounts.length}`);
+
     const reconciliations = {};
     reconciliationRows.forEach(r => {
       reconciliations[r.accountId] = { lastDate: r.lastDate, lastBalance: r.lastBalance };
     });
+
     const excludedTxns = transactions.filter(t => t.excluded).map(t => t.id);
+
     const settingMap = {};
     settings.forEach(s => { settingMap[s.key] = s.value; });
+
     res.json({
       transactions: transactions.map(t => ({
         id: t.id, date: t.date, description: t.description, amount: t.amount,
@@ -177,19 +214,24 @@ app.get("/api/data", async (req, res) => {
         id: a.id, name: a.name, type: a.type, cashFlow: a.cashFlow ?? null,
         isBankFeed: a.isBankFeed, parentId: a.parentId ?? null, inactive: a.inactive,
       })),
-      sources:         sources.map(s => ({ id: s.id, name: s.name })),
-      rules:           rules.map(r => ({ id: r.id, pattern: r.pattern, matchType: r.matchType, accountId: r.accountId })),
-      manualJEs:       manualJEs.map(je => ({ id: je.id, date: je.date, memo: je.memo, lines: je.lines })),
-      reconciliations, excludedTxns,
-      accountOrder:      settingMap["accountOrder"]      ?? null,
-      reportNames:       settingMap["reportNames"]       ?? null,
-      customTheme:       settingMap["customTheme"]       ?? null,
-      customReportTheme: settingMap["customReportTheme"] ?? null,
-      themeName:         settingMap["themeName"]         ?? null,
-      showCoaInactive:   settingMap["showCoaInactive"]   ?? false,
-      reconHistory:      settingMap["reconHistory"]      ?? [],
-      themeOverrides:    settingMap["themeOverrides"]    ?? {},
-      defaultThemeName:  settingMap["defaultThemeName"]  ?? null,
+      sources:      sources.map(s => ({ id: s.id, name: s.name })),
+      rules:        rules.map(r => ({ id: r.id, pattern: r.pattern, matchType: r.matchType, accountId: r.accountId })),
+      manualJEs:    manualJEs.map(je => ({ id: je.id, date: je.date, memo: je.memo, lines: je.lines })),
+      reconciliations,
+      excludedTxns,
+      // Settings
+      accountOrder:        settingMap["accountOrder"]        ?? null,
+      reportNames:         settingMap["reportNames"]         ?? null,
+      showCoaInactive:     settingMap["showCoaInactive"]     ?? false,
+      reconHistory:        settingMap["reconHistory"]        ?? [],
+      // App theme
+      appThemeMode:        settingMap["appThemeMode"]        ?? null,
+      customAppLightTheme: settingMap["customAppLightTheme"] ?? null,
+      customAppDarkTheme:  settingMap["customAppDarkTheme"]  ?? null,
+      // Report theme
+      reportThemeMode:     settingMap["reportThemeMode"]     ?? null,
+      customLightTheme:    settingMap["customLightTheme"]    ?? null,
+      customDarkTheme:     settingMap["customDarkTheme"]     ?? null,
     });
   } catch (e) {
     console.error("GET /api/data error:", e);
@@ -197,12 +239,17 @@ app.get("/api/data", async (req, res) => {
   }
 });
 
+// ── POST /api/data ────────────────────────────────────────────────────────────
 app.post("/api/data", async (req, res) => {
   const {
     transactions = [], accounts = [], sources = [], rules = [], manualJEs = [],
     reconciliations = {}, excludedTxns = [],
-    accountOrder, reportNames, customTheme, customReportTheme, themeName,
-    showCoaInactive, reconHistory, themeOverrides, defaultThemeName,
+    // Settings
+    accountOrder, reportNames, showCoaInactive, reconHistory,
+    // App theme
+    appThemeMode, customAppLightTheme, customAppDarkTheme,
+    // Report theme
+    reportThemeMode, customLightTheme, customDarkTheme,
   } = req.body;
 
   if (transactions.length === 0 && accounts.length === 0) {
@@ -214,6 +261,7 @@ app.post("/api/data", async (req, res) => {
 
   try {
     const excludedSet = new Set(excludedTxns);
+
     await prisma.transaction.deleteMany();
     await prisma.account.deleteMany();
     await prisma.source.deleteMany();
@@ -232,6 +280,7 @@ app.post("/api/data", async (req, res) => {
         },
       });
     }
+
     for (let idx = 0; idx < accounts.length; idx++) {
       const a = accounts[idx];
       await prisma.account.create({
@@ -245,38 +294,50 @@ app.post("/api/data", async (req, res) => {
         },
       });
     }
+
     for (const s of sources) {
       await prisma.source.create({ data: { id: s.id, name: s.name } });
     }
+
     for (const r of rules) {
       await prisma.rule.create({
         data: { id: String(r.id), pattern: r.pattern, matchType: r.matchType, accountId: r.accountId },
       });
     }
+
     for (const je of manualJEs) {
       await prisma.manualJE.create({
         data: { id: je.id, date: je.date || "", memo: je.memo || "", lines: je.lines },
       });
     }
+
     for (const [accountId, r] of Object.entries(reconciliations)) {
       await prisma.reconciliation.create({
         data: { accountId, lastDate: r.lastDate, lastBalance: r.lastBalance },
       });
     }
+
     const upsert = async (key, value) => {
       await prisma.setting.upsert({
-        where: { key }, update: { value: value ?? null }, create: { key, value: value ?? null },
+        where:  { key },
+        update: { value: value ?? null },
+        create: { key, value: value ?? null },
       });
     };
-    await upsert("accountOrder",      accountOrder);
-    await upsert("reportNames",       reportNames);
-    await upsert("customTheme",       customTheme);
-    await upsert("customReportTheme", customReportTheme);
-    await upsert("themeName",         themeName);
-    await upsert("showCoaInactive",   showCoaInactive);
-    await upsert("reconHistory",      reconHistory ?? []);
-    await upsert("themeOverrides",    themeOverrides ?? {});
-    await upsert("defaultThemeName",  defaultThemeName ?? null);
+
+    // Settings
+    await upsert("accountOrder",        accountOrder);
+    await upsert("reportNames",         reportNames);
+    await upsert("showCoaInactive",     showCoaInactive);
+    await upsert("reconHistory",        reconHistory ?? []);
+    // App theme
+    await upsert("appThemeMode",        appThemeMode        ?? null);
+    await upsert("customAppLightTheme", customAppLightTheme ?? null);
+    await upsert("customAppDarkTheme",  customAppDarkTheme  ?? null);
+    // Report theme
+    await upsert("reportThemeMode",     reportThemeMode     ?? null);
+    await upsert("customLightTheme",    customLightTheme    ?? null);
+    await upsert("customDarkTheme",     customDarkTheme     ?? null);
 
     console.log(`  POST /api/data DONE`);
     res.json({ ok: true });
