@@ -3981,7 +3981,19 @@ export default function FinanceApp() {
                       if(d.showCoaInactive!==undefined) setShowCoaInactive(d.showCoaInactive);
                       if(d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
                       if(d.customReportTheme) setCustomReportTheme(d.customReportTheme);
-                      alert("Data imported successfully!");
+                      // Directly POST to server — bypass all save machinery
+                      const payload = {
+                        ...d,
+                        excludedTxns: d.excludedTxns || [],
+                      };
+                      fetch(`${API}/api/data`, {
+                        method:"POST",
+                        headers:{"Content-Type":"application/json"},
+                        body: JSON.stringify(payload),
+                      })
+                      .then(r=>r.json())
+                      .then(r=>{ alert(r.skipped ? "Import blocked — payload was empty." : "Data imported and saved to server!"); })
+                      .catch(()=>alert("Imported locally but could not reach server."));
                     } catch(err){ alert("Could not read file. Make sure it's a valid ledger backup."); }
                   };
                   reader.readAsText(file); e.target.value="";
