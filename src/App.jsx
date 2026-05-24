@@ -3295,9 +3295,6 @@ export default function FinanceApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })
-      .then(() => {
-        try { localStorage.setItem("ledger_data", JSON.stringify(payload)); } catch(e) {}
-      })
       .catch(e => console.warn("Could not save to server:", e));
     }, 1500);
   }, []);
@@ -3829,29 +3826,9 @@ export default function FinanceApp() {
         apply();
         setTimeout(() => { initialLoadDone.current = true; }, 3000);
       })
-      .catch(() => {
-        try {
-          const saved = localStorage.getItem("ledger_data");
-          if (!saved) return;
-          const d = JSON.parse(saved);
-          if (d.transactions?.length)  setTransactions(d.transactions);
-          if (d.accounts?.length)      setAccounts(d.accounts.map(a=>({...a, parentId: (!a.parentId||a.parentId==="null"||a.parentId==="undefined")?"":a.parentId})));
-          if (d.sources?.length)       setSources(d.sources);
-          if (d.rules?.length)         setRules(d.rules);
-          if (d.manualJEs?.length)     setManualJEs(d.manualJEs);
-          if (d.accountOrder)          setAccountOrder(d.accountOrder);
-          if (d.reportNames)           setReportNames(d.reportNames);
-          if (d.reconciliations && Object.keys(d.reconciliations).length) setReconciliations(d.reconciliations);
-          if (d.reconHistory?.length)  setReconHistory(d.reconHistory);
-          if (d.customTheme)           setCustomTheme(d.customTheme);
-          if (d.themeName)             setThemeName(d.themeName);
-          if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
-          if (d.excludedTxns?.length)  setExcludedTxns(new Set(d.excludedTxns));
-          if (d.customReportTheme)     setCustomReportTheme(d.customReportTheme);
-          if (d.themeOverrides)        setThemeOverrides(d.themeOverrides);
-          if (d.defaultThemeName)      setDefaultThemeName(d.defaultThemeName);
-          setTimeout(() => { initialLoadDone.current = true; }, 3000);
-        } catch(e) { console.warn("Could not load saved data:", e); }
+      .catch((e) => {
+        console.warn("Could not load from server:", e);
+        setTimeout(() => { initialLoadDone.current = true; }, 1000);
       });
   }, []);
 
