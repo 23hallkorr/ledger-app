@@ -3149,6 +3149,82 @@ function EditableField({ value, onChange, style={}, className="" }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// PLAID ACCOUNT MAPPING MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+function PlaidMappingModal({ plaidAccounts, coaAccounts, onComplete, onClose }) {
+  const bankAccts = coaAccounts.filter(a => a.type==="Asset" || a.type==="Liability");
+  const [mappings, setMappings] = useState(()=>
+    plaidAccounts.map(pa => ({
+      plaidAccountId: pa.plaidAccountId,
+      plaidName: pa.name,
+      mask: pa.mask,
+      type: pa.type,
+      coaAccountId: bankAccts.find(a =>
+        a.name.toLowerCase().includes(pa.name.toLowerCase().split(" ")[0]) ||
+        pa.name.toLowerCase().includes(a.name.toLowerCase().split(" ")[0])
+      )?.id || "",
+    }))
+  );
+
+  const setMapping = (plaidAccountId, coaAccountId) => {
+    setMappings(prev => prev.map(m => m.plaidAccountId===plaidAccountId ? {...m, coaAccountId} : m));
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{width:580,maxWidth:"96vw"}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-title">Map Bank Accounts</div>
+        <p style={{fontSize:12,color:"var(--text3)",marginBottom:16}}>
+          Match each account from your bank to an account on your Chart of Accounts.
+          This determines which register the transactions appear in.
+        </p>
+        <div style={{border:"1px solid var(--border)",borderRadius:"var(--radius)",overflow:"hidden",marginBottom:16}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead>
+              <tr style={{background:"var(--surface2)"}}>
+                <th style={{padding:"8px 14px",textAlign:"left",fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase"}}>Bank Account</th>
+                <th style={{padding:"8px 14px",textAlign:"left",fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase"}}>Map To</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mappings.map((m,i)=>(
+                <tr key={m.plaidAccountId} style={{borderTop:"1px solid var(--border)",background:i%2===0?"":"var(--surface)"}}>
+                  <td style={{padding:"10px 14px"}}>
+                    <div style={{fontSize:13,color:"var(--text)",fontWeight:500}}>{m.plaidName}</div>
+                    <div style={{fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace"}}>
+                      {m.mask ? `••••${m.mask}` : ""} · {m.type}
+                    </div>
+                  </td>
+                  <td style={{padding:"10px 14px"}}>
+                    <select value={m.coaAccountId} onChange={e=>setMapping(m.plaidAccountId, e.target.value)}
+                      style={{width:"100%",padding:"7px 10px",background:"var(--surface2)",color:"var(--text)",border:"1px solid var(--border)",borderRadius:6,fontSize:13}}>
+                      <option value="">— Skip this account —</option>
+                      {["Asset","Liability"].map(type=>(
+                        <optgroup key={type} label={type==="Asset"?"Bank Accounts":"Credit Cards"}>
+                          {bankAccts.filter(a=>a.type===type).map(a=>(
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={()=>onComplete(mappings)}>
+            Import Transactions →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function FinanceApp() {
   const [page,           setPage]          = useState("classify");
   const [transactions,   setTransactions]  = useState([]);
@@ -3189,6 +3265,8 @@ export default function FinanceApp() {
   const [plaidAccounts,   setPlaidAccounts]   = useState([]);
   const [plaidSyncing,    setPlaidSyncing]    = useState(false);
   const [showPlaidModal,  setShowPlaidModal]  = useState(false);
+  const [showPlaidMapping,setShowPlaidMapping]= useState(false);
+  const [plaidMappingAccounts, setPlaidMappingAccounts] = useState([]); // accounts returned by Plaid to map
   const [reportNames,    setReportNames]   = useState({
     company: "My Company",
     pnl:     "Income Statement",
@@ -3266,7 +3344,7 @@ export default function FinanceApp() {
       // 1. Get a link token from our server
       const ltRes = await fetch(`${API}/api/plaid/link-token`, {
         method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ redirectUri: window.location.origin }),
+        body: JSON.stringify({ redirectUri: window.location.href.split("?")[0].replace(/\/$/, "") }),
       });
       const { link_token, error } = await ltRes.json();
       if (error) { alert("Plaid error: " + error); return; }
@@ -3285,7 +3363,7 @@ export default function FinanceApp() {
       const handler = window.Plaid.create({
         token: link_token,
         onSuccess: async (public_token, metadata) => {
-          // 4. Exchange for access token
+          // Exchange for access token
           const exRes = await fetch(`${API}/api/plaid/exchange-token`, {
             method:"POST", headers:{"Content-Type":"application/json"},
             body: JSON.stringify({ public_token }),
@@ -3293,21 +3371,9 @@ export default function FinanceApp() {
           const exData = await exRes.json();
           if (!exData.ok) { alert("Error connecting bank: " + exData.error); return; }
 
-          // 5. Add connected accounts to our sources list
-          for (const pa of exData.accounts) {
-            setSources(prev => {
-              if (prev.find(s=>s.id===pa.plaidAccountId)) return prev;
-              return [...prev, { id: pa.plaidAccountId, name: pa.name + (pa.mask ? ` ••${pa.mask}` : "") }];
-            });
-          }
-          setPlaidAccounts(prev => {
-            const ids = new Set(prev.map(a=>a.plaidAccountId));
-            return [...prev, ...exData.accounts.filter(a=>!ids.has(a.plaidAccountId))];
-          });
-
-          // 6. Immediately sync transactions
-          await syncPlaidAccount(exData.accounts[0].plaidAccountId);
-          alert("Bank connected! Transactions imported.");
+          // Show mapping modal so user can match Plaid accounts to COA accounts
+          setPlaidMappingAccounts(exData.accounts);
+          setShowPlaidMapping(true);
         },
         onExit: (err) => { if (err) console.error("Plaid exit:", err); },
       });
@@ -3317,7 +3383,29 @@ export default function FinanceApp() {
     }
   };
 
-  const syncPlaidAccount = async (plaidAccountId) => {
+  const completePlaidMapping = async (mappings) => {
+    // mappings: [{plaidAccountId, coaAccountId, plaidName, mask}]
+    setShowPlaidMapping(false);
+    for (const m of mappings) {
+      if (!m.coaAccountId) continue;
+      // Use the COA account id as the sourceId so transactions go to the right register
+      setSources(prev => {
+        if (prev.find(s=>s.id===m.coaAccountId)) return prev;
+        const acct = accounts.find(a=>a.id===m.coaAccountId);
+        return [...prev, { id: m.coaAccountId, name: acct?.name || m.plaidName }];
+      });
+      // Store the plaid account with the coaAccountId as its sourceId key
+      setPlaidAccounts(prev => {
+        const filtered = prev.filter(a=>a.plaidAccountId!==m.plaidAccountId);
+        return [...filtered, { ...m, mappedTo: m.coaAccountId }];
+      });
+      await syncPlaidAccountToSource(m.plaidAccountId, m.coaAccountId);
+    }
+    setActiveSrcId(mappings.find(m=>m.coaAccountId)?.coaAccountId || "all");
+    setPage("classify");
+  };
+
+  const syncPlaidAccountToSource = async (plaidAccountId, sourceId) => {
     setPlaidSyncing(true);
     try {
       const res = await fetch(`${API}/api/plaid/sync`, {
@@ -3325,9 +3413,10 @@ export default function FinanceApp() {
         body: JSON.stringify({ plaidAccountId }),
       });
       const data = await res.json();
-      if (!data.ok) { alert("Sync error: " + data.error); return; }
+      if (!data.ok) { console.error("Sync error:", data.error); return 0; }
       if (data.added?.length) {
-        const withRules = data.added.map(t => {
+        const remapped = data.added.map(t => ({...t, sourceId}));
+        const withRules = remapped.map(t => {
           const matched = applyRules(t, rules);
           return matched ? {...t, accountId: matched} : t;
         });
@@ -3335,12 +3424,11 @@ export default function FinanceApp() {
           const ids = new Set(prev.map(t=>t.id));
           return [...prev, ...withRules.filter(t=>!ids.has(t.id))];
         });
-        setActiveSrcId(plaidAccountId);
-        setPage("classify");
       }
       return data.added?.length || 0;
     } catch(e) {
-      alert("Sync failed: " + e.message);
+      console.error("Sync failed:", e);
+      return 0;
     } finally {
       setPlaidSyncing(false);
     }
@@ -3349,7 +3437,8 @@ export default function FinanceApp() {
   const syncAllPlaid = async () => {
     let total = 0;
     for (const pa of plaidAccounts) {
-      const count = await syncPlaidAccount(pa.plaidAccountId);
+      const sourceId = pa.mappedTo || pa.plaidAccountId;
+      const count = await syncPlaidAccountToSource(pa.plaidAccountId, sourceId);
       total += count || 0;
     }
     if (total === 0) alert("No new transactions found.");
@@ -4469,6 +4558,11 @@ export default function FinanceApp() {
 
       {/* MODALS */}
       {showImportModal  && <ImportModal  accounts={activeAccounts} onImport={handleImport} onClose={()=>setShowImportModal(false)}/>}
+      {showPlaidMapping && <PlaidMappingModal
+        plaidAccounts={plaidMappingAccounts}
+        coaAccounts={activeAccounts}
+        onComplete={completePlaidMapping}
+        onClose={()=>setShowPlaidMapping(false)}/>}
       {showPreCatModal  && <PreCatImportModal accounts={activeAccounts} onImport={handlePreCatImport} onClose={()=>setShowPreCatModal(false)}/>}
       {showAcctModal    && <AccountModal account={modalAccount}  accounts={accounts} onSave={saveAccount}  onClose={()=>{setShowAcctModal(false);setModalAccount(null);}}/>}
       {showRuleModal    && <RuleModal    rule={modalRule}        accounts={activeAccounts}   onSave={saveRule}    onClose={()=>{setShowRuleModal(false);setModalRule(null);}}/>}
