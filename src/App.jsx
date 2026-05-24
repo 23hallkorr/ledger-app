@@ -241,6 +241,8 @@ const styles = `
   .drill-sub{font-size:12px;color:var(--text3);margin-top:3px;font-family:'DM Mono',monospace;}
   .drill-body{overflow-y:auto;flex:1;}
   .drill-total{padding:12px 22px;border-top:1px solid var(--border);background:var(--surface2);display:flex;justify-content:space-between;align-items:center;}
+  .del-btn{background:none;border:1px solid transparent;color:var(--text3);font-size:11px;font-family:'DM Sans',sans-serif;cursor:pointer;padding:2px 8px;border-radius:4px;transition:all .15s;}
+  .del-btn:hover{color:var(--red);border-color:rgba(255,82,82,.3);background:rgba(255,82,82,.06);}
   .drill-edit-btn{background:none;border:none;color:var(--blue);font-size:12px;cursor:pointer;padding:2px 4px;opacity:.7;font-family:'DM Sans',sans-serif;}
   .drill-edit-btn:hover{opacity:1;text-decoration:underline;}
   .drill-je-btn{background:none;border:none;color:var(--purple);font-size:12px;cursor:pointer;padding:2px 4px;opacity:.7;font-family:'DM Sans',sans-serif;}
@@ -428,7 +430,7 @@ const styles = `
   .period-label{font-size:12px;color:var(--text3);font-family:'DM Mono',monospace;}
 
   /* Resizable no-wrap transaction table */
-  .txn-table-wrap{overflow-x:auto;border-radius:var(--radius-lg);border:1px solid var(--border);}
+  .txn-table-wrap{overflow-x:auto;border-radius:var(--radius-lg);border:1px solid var(--border);width:100%;}
   .txn-table{width:100%;border-collapse:collapse;table-layout:fixed;}
   .txn-table th{background:var(--surface2);color:var(--text3);font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:10px 10px;text-align:left;font-family:'DM Mono',monospace;font-weight:400;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;position:relative;user-select:none;}
   .txn-table td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;}
@@ -1925,6 +1927,58 @@ function BulkModal({ count, accounts, onApply, onClose }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// BULK EDIT MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+function BulkEditModal({ count, onApply, onClose }) {
+  const [field,  setField]  = useState("description");
+  const [value,  setValue]  = useState("");
+  const [confirm, setConfirm] = useState(false);
+
+  const fields = [
+    {k:"description", label:"Description"},
+    {k:"date",        label:"Date"},
+    {k:"accountId",   label:"Category (use Bulk Classify instead)", disabled:true},
+  ];
+
+  const handleApply = () => {
+    if (!value.trim()) return;
+    onApply(field, value.trim());
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-title">Bulk Edit</div>
+        <p style={{color:"var(--text2)",fontSize:13,marginBottom:18}}>
+          Edit <strong style={{color:"var(--accent)"}}>{count} transaction{count!==1?"s":""}</strong> at once.
+        </p>
+        <div className="field">
+          <label>Field to Edit</label>
+          <select value={field} onChange={e=>{setField(e.target.value);setValue("");}} style={{width:"100%",padding:"7px 11px"}}>
+            <option value="description">Description</option>
+            <option value="date">Date</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>New Value</label>
+          {field==="date"
+            ? <input type="date" value={value} onChange={e=>setValue(e.target.value)} style={{width:"100%"}}/>
+            : <input type="text"  value={value} onChange={e=>setValue(e.target.value)} placeholder="Enter new value…" style={{width:"100%"}}/>
+          }
+        </div>
+        <div className="flex gap-8 mt-14">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary ml-auto" disabled={!value.trim()} onClick={handleApply}>
+            Apply to {count}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // BANK ACCOUNT IMPORT MODAL
 // ─────────────────────────────────────────────────────────────────────────────
 function ImportModal({ accounts, onImport, onClose }) {
@@ -2033,13 +2087,15 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
   const [search,        setSearch]        = useState("");
   const [section,       setSection]       = useState("uncategorized");
   const [currentPage,   setCurrentPage]   = useState(1);
-  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [showBulkModal,     setShowBulkModal]     = useState(false);
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
+  const [confirmBulkDel,    setConfirmBulkDel]    = useState(false);
   const [editingId,     setEditingId]     = useState(null);
   const [pendingQueue,  setPendingQueue]  = useState({});
   const [confirmDelId,  setConfirmDelId]  = useState(null);
   const [editingDescId, setEditingDescId] = useState(null);
   const [editDescVal,   setEditDescVal]   = useState("");
-  const [colWidths,     setColWidths]     = useState({date:90,desc:220,amt:90,cat:200,transfer:110,del:70});
+  const [colWidths,     setColWidths]     = useState({date:90,desc:320,amt:110,cat:220,transfer:130,del:70});
   const [sortKey,       setSortKey]       = useState("date");
   const [sortDir,       setSortDir]       = useState("desc");
   const setCW = (k,w) => setColWidths(p=>({...p,[k]:w}));
@@ -2122,6 +2178,14 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
     setSelected(new Set()); setShowBulkModal(false);
   };
 
+  const applyBulkEdit = (field, value) => {
+    [...selected].forEach(id => {
+      if (onUpdate) onUpdate(id, {[field]: value});
+    });
+    setSelected(new Set());
+    setShowBulkEditModal(false);
+  };
+
   // Stage a classification without immediately committing (Enter-to-advance flow)
   const stageClassify = (id, accountId) => {
     setPendingQueue(q=>({...q,[id]:accountId}));
@@ -2197,9 +2261,37 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
         <input type="text" placeholder="Search descriptions…" value={search}
           onChange={e=>{setSearch(e.target.value);setCurrentPage(1);}} style={{width:200}}/>
         <div className="toolbar-spacer"/>
-        {selected.size>0 && <button className="btn btn-primary btn-sm" onClick={()=>setShowBulkModal(true)}>Classify {selected.size} Selected</button>}
         {rules.length>0 && <button className="btn btn-ghost btn-sm" onClick={onApplyRules}>⚡ Apply Rules</button>}
       </div>
+
+      {/* Bulk action bar */}
+      {selected.size>0 && (
+        <div className="bulk-bar">
+          <span className="bulk-count">{selected.size} selected</span>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setShowBulkModal(true)}>
+            📂 Classify
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setShowBulkEditModal(true)}>
+            ✎ Edit
+          </button>
+          {confirmBulkDel
+            ? <span style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:12,color:"var(--text2)"}}>Delete {selected.size} transactions?</span>
+                <button className="btn btn-sm" style={{background:"var(--red)",color:"#fff",border:"none"}}
+                  onClick={()=>{ [...selected].forEach(id=>onDelete&&onDelete(id)); setSelected(new Set()); setConfirmBulkDel(false); }}>
+                  Yes, Delete
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmBulkDel(false)}>Cancel</button>
+              </span>
+            : <button className="del-btn" style={{marginLeft:4}} onClick={()=>setConfirmBulkDel(true)}>
+                🗑 Delete
+              </button>
+          }
+          <button className="btn btn-ghost btn-sm" style={{marginLeft:"auto"}} onClick={()=>setSelected(new Set())}>
+            ✕ Clear
+          </button>
+        </div>
+      )}
 
       {/* Pending-queue bulk accept bar */}
       {Object.keys(pendingQueue).length>0 && (
@@ -2273,7 +2365,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                   }
                 </tr></thead>
                 <tbody>
-                  {paged.map(t => {
+                  {paged.map((t, rowIdx) => {
                     const entry        = getEntry(t);
                     const catAcct      = t.accountId ? acctById[t.accountId] : null;
                     const isDebitOnSrc = entry?.debitAcctId  === sourceAccount?.id;
@@ -2288,13 +2380,13 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                       >
                         <td style={{paddingLeft:14}} onClick={e=>e.stopPropagation()}>
                           <input type="checkbox" className="cb" checked={selected.has(t.id)}
-                            onChange={e=>toggleOneShift(t.id, paged.indexOf(t), e)}/>
+                            onChange={e=>toggleOneShift(t.id, rowIdx, e)}/>
                         </td>
                         <td className="font-mono" style={{color:"var(--text3)",fontSize:12,whiteSpace:"nowrap"}}>
                           {t.date}
                           {t.reconciled && <span style={{marginLeft:5,fontSize:10,color:"var(--green)",fontWeight:700}}>R</span>}
                         </td>
-                        <td style={{color:"var(--text)",maxWidth:200}} onDoubleClick={e=>{e.stopPropagation();setEditingDescId(t.id);setEditDescVal(t.description||"");}}>
+                        <td style={{color:"var(--text)"}} onDoubleClick={e=>{e.stopPropagation();setEditingDescId(t.id);setEditDescVal(t.description||"");}}>
                           {editingDescId===t.id
                             ? <input autoFocus type="text" value={editDescVal}
                                 onChange={e=>setEditDescVal(e.target.value)}
@@ -2420,6 +2512,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
       }
 
       {showBulkModal&&<BulkModal count={selected.size} accounts={accounts} onApply={applyBulk} onClose={()=>setShowBulkModal(false)}/>}
+      {showBulkEditModal&&<BulkEditModal count={selected.size} onApply={applyBulkEdit} onClose={()=>setShowBulkEditModal(false)}/>}
     </div>
   );
 }
