@@ -3426,23 +3426,22 @@ export default function FinanceApp() {
   };
 
   const completePlaidMapping = async (mappings) => {
-    // mappings: [{plaidAccountId, coaAccountId, plaidName, mask}]
     setShowPlaidMapping(false);
     for (const m of mappings) {
       if (!m.coaAccountId) continue;
-      // Use the COA account id as the sourceId so transactions go to the right register
       setSources(prev => {
         if (prev.find(s=>s.id===m.coaAccountId)) return prev;
         const acct = accounts.find(a=>a.id===m.coaAccountId);
         return [...prev, { id: m.coaAccountId, name: acct?.name || m.plaidName }];
       });
-      // Store the plaid account with the coaAccountId as its sourceId key
       setPlaidAccounts(prev => {
         const filtered = prev.filter(a=>a.plaidAccountId!==m.plaidAccountId);
         return [...filtered, { ...m, mappedTo: m.coaAccountId }];
       });
       await syncPlaidAccountToSource(m.plaidAccountId, m.coaAccountId);
     }
+    // Long delay to ensure all state (existing + new Plaid txns) has settled
+    setTimeout(save, 3000);
     setActiveSrcId(mappings.find(m=>m.coaAccountId)?.coaAccountId || "all");
     setPage("classify");
   };
@@ -3483,8 +3482,13 @@ export default function FinanceApp() {
       const count = await syncPlaidAccountToSource(pa.plaidAccountId, sourceId);
       total += count || 0;
     }
-    if (total === 0) alert("No new transactions found.");
-    else alert(`Imported ${total} new transaction${total!==1?"s":""}.`);
+    if (total > 0) {
+      // Wait for React to process all state updates before saving
+      setTimeout(save, 3000);
+      alert(`Imported ${total} new transaction${total!==1?"s":""}. Saving…`);
+    } else {
+      alert("No new transactions found.");
+    }
   };
 
   // ── Transfer matching ─────────────────────────────────────────────────────
@@ -3816,7 +3820,7 @@ export default function FinanceApp() {
           if (d.defaultThemeName)      setDefaultThemeName(d.defaultThemeName);
         };
         apply();
-        setTimeout(() => { initialLoadDone.current = true; }, 1000);
+        setTimeout(() => { initialLoadDone.current = true; }, 3000);
       })
       .catch(() => {
         try {
@@ -3839,7 +3843,7 @@ export default function FinanceApp() {
           if (d.customReportTheme)     setCustomReportTheme(d.customReportTheme);
           if (d.themeOverrides)        setThemeOverrides(d.themeOverrides);
           if (d.defaultThemeName)      setDefaultThemeName(d.defaultThemeName);
-          setTimeout(() => { initialLoadDone.current = true; }, 1000);
+          setTimeout(() => { initialLoadDone.current = true; }, 3000);
         } catch(e) { console.warn("Could not load saved data:", e); }
       });
   }, []);
