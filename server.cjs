@@ -113,10 +113,26 @@ app.post("/api/plaid/sync", async (req, res) => {
 app.get("/api/plaid/accounts", async (req, res) => {
   try {
     const accounts = await prisma.plaidAccount.findMany({
-      select: { plaidAccountId:true, name:true, mask:true, type:true, subtype:true, cursor:true },
+      select: { plaidAccountId:true, name:true, mask:true, type:true, subtype:true, cursor:true, mappedToId:true },
     });
     res.json({ accounts });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+// ── Plaid: save account mapping ───────────────────────────────────────────────
+app.post("/api/plaid/map", async (req, res) => {
+  try {
+    const { plaidAccountId, mappedToId } = req.body;
+    await prisma.plaidAccount.update({
+      where: { plaidAccountId },
+      data: { mappedToId },
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("Plaid map error:", e.message);
     res.status(500).json({ error: e.message });
   }
 });

@@ -3433,6 +3433,10 @@ export default function FinanceApp() {
     setShowPlaidMapping(false);
     for (const m of mappings) {
       if (!m.coaAccountId) continue;
+      fetch(`${API}/api/plaid/map`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ plaidAccountId: m.plaidAccountId, mappedToId: m.coaAccountId }),
+      }).catch(()=>{});
       setSources(prev => {
         if (prev.find(s=>s.id===m.coaAccountId)) return prev;
         const acct = accounts.find(a=>a.id===m.coaAccountId);
@@ -3440,11 +3444,10 @@ export default function FinanceApp() {
       });
       setPlaidAccounts(prev => {
         const filtered = prev.filter(a=>a.plaidAccountId!==m.plaidAccountId);
-        return [...filtered, { ...m, mappedTo: m.coaAccountId }];
+        return [...filtered, { ...m, mappedTo: m.coaAccountId, mappedToId: m.coaAccountId }];
       });
       await syncPlaidAccountToSource(m.plaidAccountId, m.coaAccountId);
     }
-    // Long delay to ensure all state (existing + new Plaid txns) has settled
     setTimeout(save, 3000);
     setActiveSrcId(mappings.find(m=>m.coaAccountId)?.coaAccountId || "all");
     setPage("classify");
@@ -3482,12 +3485,11 @@ export default function FinanceApp() {
   const syncAllPlaid = async () => {
     let total = 0;
     for (const pa of plaidAccounts) {
-      const sourceId = pa.mappedTo || pa.plaidAccountId;
+      const sourceId = pa.mappedToId || pa.mappedTo || pa.plaidAccountId;
       const count = await syncPlaidAccountToSource(pa.plaidAccountId, sourceId);
       total += count || 0;
     }
     if (total > 0) {
-      // Wait for React to process all state updates before saving
       setTimeout(save, 3000);
       alert(`Imported ${total} new transaction${total!==1?"s":""}. Saving…`);
     } else {

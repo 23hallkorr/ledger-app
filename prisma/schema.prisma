@@ -74,5 +74,6 @@ model PlaidAccount {
   type           String
   subtype        String
   cursor         String @default("")
+  mappedToId     String?
   createdAt      DateTime @default(now())
 }
