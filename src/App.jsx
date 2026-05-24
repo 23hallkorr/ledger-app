@@ -731,6 +731,27 @@ function formatPeriodKey(key, period) {
   return key;
 }
 
+// Get start/end date strings for a period key (used for column drill)
+function periodStart({period,key}) {
+  if (period==="year")  return `${key}-01-01`;
+  if (period==="month") return `${key}-01`;
+  if (period==="week")  return key; // week key is already the Monday date
+  return key;
+}
+function periodEnd({period,key}) {
+  if (period==="year")  return `${key}-12-31`;
+  if (period==="month") {
+    const [y,m]=key.split("-").map(Number);
+    const last=new Date(y,m,0).getDate();
+    return `${key}-${String(last).padStart(2,"0")}`;
+  }
+  if (period==="week") {
+    const d=new Date(key); d.setDate(d.getDate()+6);
+    return d.toISOString().slice(0,10);
+  }
+  return key;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSFER MATCHING
 // ─────────────────────────────────────────────────────────────────────────────
@@ -822,9 +843,44 @@ function AccountCombo({ value, accounts, onChange }) {
   const wrapRef = useRef(), dropRef = useRef();
   const selected = accounts.find(a => a.id === value);
 
+  // Build a depth map for hierarchy display
+  const depthMap = useMemo(()=>{
+    const m = {};
+    const getDepth = (id, visited=new Set()) => {
+      if (m[id] !== undefined) return m[id];
+      if (visited.has(id)) return 0;
+      visited.add(id);
+      const acct = accounts.find(a=>a.id===id);
+      if (!acct || !acct.parentId) { m[id]=0; return 0; }
+      m[id] = 1 + getDepth(acct.parentId, visited);
+      return m[id];
+    };
+    accounts.forEach(a=>getDepth(a.id));
+    return m;
+  },[accounts]);
+
+  // An account is a parent if any other account has it as parentId
+  const isParent = useMemo(()=>{
+    const s = new Set(accounts.filter(a=>a.parentId).map(a=>a.parentId));
+    return s;
+  },[accounts]);
+
+  // Build hierarchy label: "Parent > Child"
+  const hierarchyLabel = (a) => {
+    const parts = [a.name];
+    let cur = a;
+    while (cur.parentId) {
+      const p = accounts.find(x=>x.id===cur.parentId);
+      if (!p) break;
+      parts.unshift(p.name);
+      cur = p;
+    }
+    return parts.join(" › ");
+  };
+
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
-    return q ? accounts.filter(a => a.name.toLowerCase().includes(q) || a.id.includes(q)) : accounts;
+    return q ? accounts.filter(a => a.name.toLowerCase().includes(q) || a.id.includes(q) || hierarchyLabel(a).toLowerCase().includes(q)) : accounts;
   }, [query, accounts]);
 
   const grouped = useMemo(() => {
@@ -840,10 +896,10 @@ function AccountCombo({ value, accounts, onChange }) {
   const openDrop = () => {
     if (!wrapRef.current) return;
     const r = wrapRef.current.getBoundingClientRect();
-    setDropPos({top:r.bottom+4,left:r.left,width:Math.max(r.width,230)});
+    setDropPos({top:r.bottom+4,left:r.left,width:Math.max(r.width,260)});
     setQuery(""); setHiIdx(0); setOpen(true);
   };
-  const pick = id => { onChange(id); setOpen(false); };
+  const pick = (id, locked) => { if(locked) return; onChange(id); setOpen(false); };
   const clear = e => { e.stopPropagation(); onChange(null); setOpen(false); };
 
   useEffect(() => {
@@ -856,7 +912,7 @@ function AccountCombo({ value, accounts, onChange }) {
   const onKey = e => {
     if (e.key==="ArrowDown"){ e.preventDefault(); setHiIdx(i=>Math.min(i+1,flat.length-1)); }
     if (e.key==="ArrowUp")  { e.preventDefault(); setHiIdx(i=>Math.max(i-1,0)); }
-    if (e.key==="Enter" && flat[hiIdx]) pick(flat[hiIdx].id);
+    if (e.key==="Enter" && flat[hiIdx]) pick(flat[hiIdx].id, isParent.has(flat[hiIdx].id));
     if (e.key==="Escape") setOpen(false);
   };
 
@@ -876,11 +932,20 @@ function AccountCombo({ value, accounts, onChange }) {
             const opts = grouped[type]; if(!opts.length) return null;
             return (<div key={type}>
               <div className="combo-group">{type}</div>
-              {opts.map(a => { const gi=flat.indexOf(a); return (
-                <div key={a.id} className={`combo-option${gi===hiIdx?" hi":""}`}
-                  onMouseDown={()=>pick(a.id)} onMouseEnter={()=>setHiIdx(gi)}>
-                  <span>{a.name}</span><span className="opt-id">{a.id}</span>
-                </div>);})}
+              {opts.map(a => {
+                const gi = flat.indexOf(a);
+                const depth = depthMap[a.id]||0;
+                const locked = isParent.has(a.id);
+                return (
+                  <div key={a.id}
+                    className={`combo-option${gi===hiIdx?" hi":""}${locked?" combo-locked":""}`}
+                    style={{paddingLeft:12+depth*14, opacity:locked?0.6:1, cursor:locked?"not-allowed":"pointer"}}
+                    onMouseDown={()=>pick(a.id,locked)} onMouseEnter={()=>setHiIdx(gi)}>
+                    <span style={{fontSize:11,color:"var(--text3)",marginRight:4}}>{depth>0?"└":""}</span>
+                    <span>{a.name}</span>
+                    {locked && <span style={{marginLeft:"auto",fontSize:11,color:"var(--text3)"}}>🔒</span>}
+                  </div>);
+              })}
             </div>);
           })}
         </div>
@@ -1195,6 +1260,15 @@ function DrillRowEditable({ t, isDebit, isCredit, abs, counterpart, running, isE
 function DrillModal({ account, transactions, manualJEs, allAccounts, startDate, endDate, onClose, onUpdate, onDelete, onExclude, excludedTxns, onEditJE }) {
   const acctById = Object.fromEntries(allAccounts.map(a=>[a.id,a]));
   const [editingJE, setEditingJE] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [lastCheckedIdx, setLastCheckedIdx] = useState(null);
+
+  // Esc key closes modal
+  useEffect(()=>{
+    const h = e => { if(e.key==="Escape") onClose(); };
+    document.addEventListener("keydown",h);
+    return ()=>document.removeEventListener("keydown",h);
+  },[onClose]);
 
   // Regular bank transactions for this account
   const txns = transactions.filter(t =>
@@ -1875,7 +1949,7 @@ function ResizeTh({ width, onResize, children, style={} }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSACTION TABLE
 // ─────────────────────────────────────────────────────────────────────────────
-function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onClassify, onSplit, onMatchTransfer, onDelete, onUpdate, rules, onApplyRules }) {
+function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manualJEs, onClassify, onSplit, onMatchTransfer, onDelete, onUpdate, rules, onApplyRules }) {
   const [selected,      setSelected]      = useState(new Set());
   const [search,        setSearch]        = useState("");
   const [section,       setSection]       = useState("uncategorized");
@@ -1899,7 +1973,26 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onCl
 
   const uncategorized = useMemo(()=>transactions.filter(t=>!t.accountId&&!pendingQueue[t.id]),[transactions,pendingQueue]);
   const categorized   = useMemo(()=>transactions.filter(t=> t.accountId || !!pendingQueue[t.id]),[transactions,pendingQueue]);
-  const pool = section==="uncategorized" ? uncategorized : categorized;
+
+  // Build JE rows for this source account's register
+  const jeRows = useMemo(()=>{
+    if (!sourceAccount || !manualJEs?.length) return [];
+    return manualJEs.flatMap(je=>
+      je.lines
+        .filter(l=>l.accountId===sourceAccount.id)
+        .map(l=>{
+          const dr=parseFloat(l.debit)||0, cr=parseFloat(l.credit)||0;
+          return {
+            id: `je-${je.id}-${l.id||Math.random()}`,
+            date: je.date, description: l.memo||je.memo||"Journal Entry",
+            amount: dr>0?dr:-cr, accountId:"__je__", sourceId:sourceAccount.id,
+            reconciled:false, isJE:true, jeId:je.id,
+          };
+        })
+    );
+  },[sourceAccount, manualJEs]);
+
+  const pool = section==="uncategorized" ? uncategorized : [...categorized,...jeRows];
 
   const filtered = useMemo(()=>{
     const q = search.toLowerCase();
@@ -1920,11 +2013,30 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onCl
   const paged = filtered.slice((pg-1)*PAGE_SIZE, pg*PAGE_SIZE);
   const allPageSelected = paged.length>0 && paged.every(t=>selected.has(t.id));
 
+  const [lastCheckedIdx, setLastCheckedIdx] = useState(null);
+
+  const toggleOne = (id) => {
+    setSelected(s=>{ const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n; });
+  };
+
+  const toggleOneShift = (id, idx, e) => {
+    if (e.shiftKey && lastCheckedIdx !== null) {
+      const lo = Math.min(idx, lastCheckedIdx), hi = Math.max(idx, lastCheckedIdx);
+      setSelected(s=>{
+        const n = new Set(s);
+        paged.forEach((t,i) => { if(i>=lo && i<=hi) n.add(t.id); });
+        return n;
+      });
+    } else {
+      toggleOne(id);
+    }
+    setLastCheckedIdx(idx);
+  };
+
   const toggleAll = () => {
     if (allPageSelected) setSelected(s=>{ const n=new Set(s); paged.forEach(t=>n.delete(t.id)); return n; });
     else                 setSelected(s=>{ const n=new Set(s); paged.forEach(t=>n.add(t.id)); return n; });
   };
-  const toggleOne = id => setSelected(s=>{ const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n; });
 
   const applyBulk = accountId => {
     selected.forEach(id=>onClassify(id,accountId));
@@ -2096,9 +2208,13 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onCl
                         className={`${selected.has(t.id)?"selected":""} ${isEditing?"row-editing":""} ${pendingQueue[t.id]?"row-pending-classify":""}`}
                       >
                         <td style={{paddingLeft:14}} onClick={e=>e.stopPropagation()}>
-                          <input type="checkbox" className="cb" checked={selected.has(t.id)} onChange={()=>toggleOne(t.id)}/>
+                          <input type="checkbox" className="cb" checked={selected.has(t.id)}
+                            onChange={e=>toggleOneShift(t.id, paged.indexOf(t), e)}/>
                         </td>
-                        <td className="font-mono" style={{color:"var(--text3)",fontSize:12,whiteSpace:"nowrap"}}>{t.date}</td>
+                        <td className="font-mono" style={{color:"var(--text3)",fontSize:12,whiteSpace:"nowrap"}}>
+                          {t.date}
+                          {t.reconciled && <span style={{marginLeft:5,fontSize:10,color:"var(--green)",fontWeight:700}}>R</span>}
+                        </td>
                         <td style={{color:"var(--text)",maxWidth:200}} onDoubleClick={e=>{e.stopPropagation();setEditingDescId(t.id);setEditDescVal(t.description||"");}}>
                           {editingDescId===t.id
                             ? <input autoFocus type="text" value={editDescVal}
@@ -2139,8 +2255,9 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, onCl
                                         </div>); })()
                                   : <div style={{display:"flex",alignItems:"center",gap:6}}>
                                       {catAcct && <span className={`badge badge-${catAcct.type.toLowerCase()}`} style={{fontSize:10}}>{catAcct.type}</span>}
-                                      <span style={{fontSize:12,color:"var(--text2)"}}>{catAcct?.name || <span style={{color:"var(--text3)"}}>—</span>}</span>
-                                      <span style={{fontSize:10,color:"var(--text3)"}}>✎</span>
+                                      <span style={{fontSize:12,color:"var(--text2)"}}>{catAcct?.name || (t.isJE?<span style={{color:"var(--purple)"}}>Journal Entry</span>:<span style={{color:"var(--text3)"}}>—</span>)}</span>
+                                      {t.isJE && <span style={{fontSize:10,color:"var(--purple)",marginLeft:2}}>JE</span>}
+                                      {!t.isJE && <span style={{fontSize:10,color:"var(--text3)"}}>✎</span>}
                                     </div>
                                 }
                               </td>
@@ -2319,18 +2436,31 @@ function TrendReport({ type, accounts, transactions, excludedTxns, startDate, en
         const nameStyle = {
           color: hasChildren ? rt.sectionText : rt.rowText,
           fontWeight: hasChildren ? 600 : 400,
-          paddingLeft: 32 + indent,
           fontSize: 12, padding: `4px 10px 4px ${32+indent}px`,
           borderBottom:`1px solid ${rt.border}`,
           cursor:"pointer", fontFamily:"DM Sans,sans-serif",
         };
+        if (hasChildren) {
+          return [
+            <tr key={`hdr-${a.id}`} style={{background:rt.sectionBg}}>
+              <td style={{...nameStyle,color:rt.sectionText}}>{a.name}</td>
+              {periods.map(p=><td key={p} style={{borderBottom:`1px solid ${rt.border}`}}></td>)}
+              <td style={{borderBottom:`1px solid ${rt.border}`}}></td>
+            </tr>,
+            ...renderTrendTree(typeAccts, a.id, depth+1, neg),
+            <tr key={`tot-${a.id}`} style={{background:rt.subtotalBg}}>
+              <td style={{...nameStyle,color:rt.subtotalText,fontWeight:700,background:rt.subtotalBg}}>Total {a.name}</td>
+              {periods.map(p=>{const v=subtreeColFn(a.id,p);return <td key={p} style={subtotalValStyle(v,neg)}>{v!==0?fmt(Math.abs(v)):""}</td>;})}
+              <td style={subtotalValStyle(total,neg)}>{total!==0?fmt(Math.abs(total)):""}</td>
+            </tr>,
+          ];
+        }
         return [
-          <tr key={a.id} onClick={()=>onDrill&&onDrill(a)} style={{background:depth===0&&hasChildren?rt.sectionBg:rt.bg}}>
+          <tr key={a.id} onClick={()=>onDrill&&onDrill(a,null)} style={{background:rt.bg,cursor:"pointer"}}>
             <td style={nameStyle}>{depth>0?"└ ":""}{a.name}</td>
-            {periods.map(p=>{const v=subtreeColFn(a.id,p);return <td key={p} style={valStyle(v,neg)}>{v!==0?fmt(Math.abs(v)):""}</td>;})}
+            {periods.map(p=>{const v=subtreeColFn(a.id,p);return <td key={p} style={{...valStyle(v,neg),cursor:"pointer"}} onClick={e=>{e.stopPropagation();onDrill&&onDrill(a,p);}}>{v!==0?fmt(Math.abs(v)):""}</td>;})}
             <td style={valStyle(total,neg)}>{total!==0?fmt(Math.abs(total)):""}</td>
           </tr>,
-          ...renderTrendTree(typeAccts, a.id, depth+1, neg),
         ];
       });
   };
@@ -2687,7 +2817,11 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, onComplete
     }
   };
 
-  const clearedTotal = allItems.filter(i=>cleared.has(i.id)).reduce((s,i)=>s+i.amount,0);
+  const isDebitNormal = acct && ["Asset","Expense"].includes(acct.type);
+  const clearedTotal = allItems.filter(i=>cleared.has(i.id)).reduce((s,i)=>{
+    const {debit,credit} = getDebitCredit(i);
+    return isDebitNormal ? s + debit - credit : s + credit - debit;
+  },0);
   const endBal = parseFloat(endBalance)||0;
   const diff   = endBal - clearedTotal;
   const isBalanced = Math.abs(diff)<0.005;
@@ -2930,7 +3064,7 @@ function ReportThemeModal({ currentTheme, onSave, onClose }) {
 }
 
 
-function CoaActionsMenu({ account, isReconType, onEdit, onReconcile, onToggleInactive }) {
+function CoaActionsMenu({ account, isReconType, onEdit, onReconcile, onToggleInactive, onDrill }) {
   const [open, setOpen]   = useState(false);
   const [pos,  setPos]    = useState({top:0,left:0});
   const btnRef = useRef();
@@ -2939,7 +3073,6 @@ function CoaActionsMenu({ account, isReconType, onEdit, onReconcile, onToggleIna
   const openMenu = () => {
     if (!btnRef.current) return;
     const r = btnRef.current.getBoundingClientRect();
-    // Open below, align right edge to button right edge
     setPos({ top: r.bottom + 4, left: r.right - 160 });
     setOpen(true);
   };
@@ -2966,6 +3099,9 @@ function CoaActionsMenu({ account, isReconType, onEdit, onReconcile, onToggleIna
           style={{position:"fixed", top:pos.top, left:Math.max(4,pos.left)}}>
           <button className="coa-menu-item" onClick={()=>pick(onEdit)}>
             ✎ &nbsp;Edit
+          </button>
+          <button className="coa-menu-item" onClick={()=>pick(onDrill)}>
+            ▸ &nbsp;View Register
           </button>
           {isReconType && !account.inactive && (
             <button className="coa-menu-item accent" onClick={()=>pick(onReconcile)}>
@@ -3034,15 +3170,22 @@ export default function FinanceApp() {
   const [reportColWidth, setReportColWidth] = useState(140);
   const [excludedTxns,   setExcludedTxns]  = useState(new Set());
   const [reconciliations, setReconciliations] = useState({});
+  const [reconHistory,    setReconHistory]    = useState([]);
+  const [showReconHistory,setShowReconHistory]= useState(false);
   const [reconAccount,    setReconAccount]    = useState(null);
   const [customTheme,     setCustomTheme]     = useState(null);
   const [showThemeEditor, setShowThemeEditor] = useState(false);
   const [customReportTheme,     setCustomReportTheme]     = useState({...DEFAULT_REPORT_THEME});
   const [dataLoaded,            setDataLoaded]            = useState(false);
-  const [splitTxn,        setSplitTxn]        = useState(null);   // transaction being split
+  const [splitTxn,        setSplitTxn]        = useState(null);
   const [globalSearch,    setGlobalSearch]    = useState("");
   const [showSearch,      setShowSearch]      = useState(false);
   const [showReportThemeEditor, setShowReportThemeEditor] = useState(false);
+  const [showRulesPanel,  setShowRulesPanel]  = useState(false);
+  const [themeOverrides,  setThemeOverrides]  = useState({});
+  const [defaultThemeName,setDefaultThemeName]= useState("Obsidian");
+  const [coaDrillAccount, setCoaDrillAccount] = useState(null); // for COA drill report
+  const [trendDrillPeriod,setTrendDrillPeriod]= useState(null); // {period, key} for column drill
   const [reportNames,    setReportNames]   = useState({
     company: "My Company",
     pnl:     "Income Statement",
@@ -3132,10 +3275,30 @@ export default function FinanceApp() {
   const toggleAccountInactive = id => setAccounts(prev=>prev.map(a=>a.id===id?{...a,inactive:!a.inactive}:a));
 
   const completeReconciliation = useCallback((acctId,date,balance,clearedIds)=>{
+    const histEntry = {
+      id: `recon-${Date.now()}`,
+      acctId, date, balance, clearedIds,
+      timestamp: new Date().toISOString(),
+    };
+    setReconHistory(prev=>[histEntry,...prev]);
     setReconciliations(prev=>({...prev,[acctId]:{lastDate:date,lastBalance:balance}}));
     setTransactions(prev=>prev.map(t=>clearedIds.includes(t.id)?{...t,reconciled:true}:t));
     setReconAccount(null);
   },[]);
+
+  const undoReconciliation = useCallback((histId)=>{
+    const entry = reconHistory.find(h=>h.id===histId);
+    if (!entry) return;
+    setTransactions(prev=>prev.map(t=>entry.clearedIds.includes(t.id)?{...t,reconciled:false}:t));
+    setReconHistory(prev=>prev.filter(h=>h.id!==histId));
+    // Restore previous recon state for this account
+    setReconciliations(prev=>{
+      const remaining = reconHistory.filter(h=>h.id!==histId&&h.acctId===entry.acctId);
+      if (!remaining.length) { const n={...prev}; delete n[entry.acctId]; return n; }
+      const latest = remaining[0];
+      return {...prev,[entry.acctId]:{lastDate:latest.date,lastBalance:latest.balance}};
+    });
+  },[reconHistory]);
 
   // ── Rules ─────────────────────────────────────────────────────────────────
   const saveRule = rule => {
@@ -3316,7 +3479,11 @@ export default function FinanceApp() {
   const dateLabel = startDate||endDate ? `${startDate||"start"} → ${endDate||"today"}` : "All Periods";
 
   // ── Render ────────────────────────────────────────────────────────────────
-  const theme = customTheme || THEMES[themeName] || THEMES["Obsidian"];
+  const theme = useMemo(()=>{
+    const base = THEMES[themeName] || THEMES[defaultThemeName] || THEMES["Obsidian"];
+    const overrides = themeOverrides[themeName] || {};
+    return customTheme || {...base, ...overrides};
+  },[customTheme, themeName, themeOverrides, defaultThemeName]);
   const rTheme = {...DEFAULT_REPORT_THEME, ...(customReportTheme||{})};
   const rColStyle = {minWidth:reportColWidth, width:reportColWidth};
 
@@ -3344,15 +3511,28 @@ export default function FinanceApp() {
         .filter(c => (c.parentId||"") === a.id)
         .some(c => subtreeBalance(allAccounts, c.id) !== 0);
       const indent = depth * 14;
+      if (hasVisibleChildren) {
+        // Parent: show name with no amount, then children, then "Total X" row
+        return [
+          <div key={`hdr-${a.id}`} className="qb-row qb-parent-row"
+            style={{cursor:"pointer",paddingLeft:indent?undefined:undefined}} onClick={()=>setDrillAccount(a)}>
+            <span className="qb-label" style={indent?{paddingLeft:indent}:{}}>{a.name}</span>
+          </div>,
+          ...renderAccountTree(allAccounts, a.id, depth+1, posClass, negClass),
+          <div key={`tot-${a.id}`} className="qb-subtotal" style={{paddingLeft:indent}}>
+            <span className="qb-subtotal-label" style={rColStyle}>Total {a.name}</span>
+            <span style={rColStyle} className={`qb-subtotal-val${sub>0?` ${posClass}`:sub<0?` ${negClass}`:""}`}>{fmt(sub)}</span>
+          </div>,
+        ];
+      }
       return [
-        <div key={a.id} className={`qb-row l${Math.min(depth+1,3)}${hasVisibleChildren?" qb-parent-row":""}`}
+        <div key={a.id} className="qb-row l1"
           style={{cursor:"pointer"}} onClick={()=>setDrillAccount(a)}>
           <span className="qb-label" style={indent?{paddingLeft:indent}:{}}>
             {depth>0?"└ ":""}{a.name}<span className="qb-hint">▸</span>
           </span>
           <span style={rColStyle} className={`qb-val${sub>0?` ${posClass}`:sub<0?` ${negClass}`:""}`}>{fmt(sub)}</span>
         </div>,
-        ...renderAccountTree(allAccounts, a.id, depth+1, posClass, negClass),
       ];
     });
   };
@@ -3378,11 +3558,14 @@ export default function FinanceApp() {
       if (d.accountOrder)          setAccountOrder(d.accountOrder);
       if (d.reportNames)           setReportNames(d.reportNames);
       if (d.reconciliations && Object.keys(d.reconciliations).length) setReconciliations(d.reconciliations);
+      if (d.reconHistory?.length)     setReconHistory(d.reconHistory);
       if (d.customTheme)           setCustomTheme(d.customTheme);
       if (d.themeName)             setThemeName(d.themeName);
       if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
       if (d.excludedTxns?.length)  setExcludedTxns(new Set(d.excludedTxns));
       if (d.customReportTheme)     setCustomReportTheme(d.customReportTheme);
+      if (d.themeOverrides)        setThemeOverrides(d.themeOverrides);
+      if (d.defaultThemeName)      setDefaultThemeName(d.defaultThemeName);
       setDataLoaded(true);
     };
     fetch(`${API}/api/data`)
@@ -3406,9 +3589,9 @@ export default function FinanceApp() {
     if (!accounts.length && !transactions.length) return;
     const payload = {
       transactions, accounts, sources, rules, manualJEs,
-      accountOrder, reportNames, reconciliations, customTheme,
+      accountOrder, reportNames, reconciliations, reconHistory, customTheme,
       themeName, showCoaInactive, excludedTxns: [...excludedTxns],
-      customReportTheme,
+      customReportTheme, themeOverrides, defaultThemeName,
     };
     const tid = setTimeout(() => {
       fetch(`${API}/api/data`, {
@@ -3424,7 +3607,8 @@ export default function FinanceApp() {
     }, 1000);
     return () => clearTimeout(tid);
   }, [dataLoaded, transactions, accounts, sources, rules, manualJEs, accountOrder,
-      reportNames, reconciliations, customTheme, themeName, showCoaInactive, excludedTxns, customReportTheme]);
+      reportNames, reconciliations, reconHistory, customTheme, themeName, showCoaInactive,
+      excludedTxns, customReportTheme, themeOverrides, defaultThemeName]);
   // Close search on outside click
   useEffect(()=>{
     if (!showSearch) return;
@@ -3509,9 +3693,6 @@ export default function FinanceApp() {
           </div>
 
           <span className="nav-section">Workspace</span>
-          <div className={`nav-item${page==="import"?" active":""}`} onClick={()=>setPage("import")}>
-            <span className="nav-icon">⬆</span>Import Data
-          </div>
 
           {/* Transactions with bank sub-tabs */}
           <div className={`nav-item${page==="classify"?" active":""}`} onClick={()=>setPage("classify")}>
@@ -3519,10 +3700,6 @@ export default function FinanceApp() {
             {unclassifiedCount>0&&<span className="nav-badge">{unclassifiedCount}</span>}
           </div>
 
-
-          <div className={`nav-item${page==="rules"?" active":""}`} onClick={()=>setPage("rules")}>
-            <span className="nav-icon">⚡</span>Rules
-          </div>
           <div className={`nav-item${page==="je"?" active":""}`} onClick={()=>setPage("je")}>
             <span className="nav-icon">✎</span>Journal Entries
           </div>
@@ -3591,23 +3768,27 @@ export default function FinanceApp() {
           </div>
           <div className="theme-picker">
             <span className="theme-label">App Theme</span>
-            <select className="theme-select" value={customTheme?"Custom":themeName}
-              onChange={e=>{ if(e.target.value==="Custom"){setShowThemeEditor(true);}else{setCustomTheme(null);setThemeName(e.target.value);} }}>
+            <select className="theme-select" value={themeName}
+              onChange={e=>{ setThemeName(e.target.value); setCustomTheme(null); }}>
               {Object.keys(THEMES).map(t=><option key={t}>{t}</option>)}
-              <option value="Custom">Custom…</option>
             </select>
-            <div style={{width:14,height:14,borderRadius:"50%",background:theme.accent,cursor:"pointer",flexShrink:0,border:"1px solid var(--border2)"}} title="Edit colours" onClick={()=>setShowThemeEditor(true)}/>
+            <div style={{width:14,height:14,borderRadius:"50%",background:theme.accent,cursor:"pointer",flexShrink:0,border:"1px solid var(--border2)"}} title="Customise theme colours" onClick={()=>setShowThemeEditor(true)}/>
           </div>
+          <div className="theme-picker" style={{marginTop:2}}>
+            <span className="theme-label" style={{fontSize:10}}>Default</span>
+            <select className="theme-select" style={{fontSize:11}} value={defaultThemeName}
+              onChange={e=>setDefaultThemeName(e.target.value)}>
+              {Object.keys(THEMES).map(t=><option key={t}>{t}</option>)}
+            </select>
+          </div>
+          {themeOverrides[themeName] && <div style={{fontSize:10,color:"var(--text3)",paddingLeft:20,paddingBottom:2}}>✎ customised</div>}
           <div className="theme-picker" style={{marginTop:4}}>
             <span className="theme-label">Report Theme</span>
             <button className="btn btn-ghost" style={{fontSize:11,padding:"3px 10px",flex:1}} onClick={()=>setShowReportThemeEditor(true)}>
-              {customReportTheme?"Custom ✎":"Customise…"}
+              Customise…
             </button>
-            {customReportTheme && <button className="btn btn-ghost" style={{fontSize:11,padding:"3px 8px",color:"var(--text3)"}} onClick={()=>setCustomReportTheme({...DEFAULT_REPORT_THEME})} title="Reset report theme">✕</button>}
           </div>
         </aside>
-
-        {/* MAIN */}
         <main className="main">
           <div className="page">
             {/* ── GLOBAL SEARCH ── */}
@@ -3720,12 +3901,13 @@ export default function FinanceApp() {
                     <div className="page-title">
                       {(()=>{ const s=tabList.find(t=>t.id===activeSrcId); return s?s.name:"Transactions"; })()}
                     </div>
-                    <div className="page-sub">Classify transactions, or use bulk actions and rules.</div>
+                    <div className="page-sub">Double-click description to edit. Shift+click checkboxes to select range.</div>
                   </div>
-                  <div style={{display:"flex",gap:8,marginTop:6}}>
-                  <button className="btn btn-primary btn-sm" onClick={()=>setShowImportModal(true)}>+ Import CSV</button>
-                  <button className="btn btn-ghost btn-sm" onClick={()=>setShowPreCatModal(true)}>+ Import Pre-Categorized</button>
-                </div>
+                  <div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap"}}>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setShowRulesPanel(true)}>⚡ Rules</button>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setShowPreCatModal(true)}>+ Import Pre-Cat</button>
+                    <button className="btn btn-primary btn-sm" onClick={()=>setShowImportModal(true)}>+ Import CSV</button>
+                  </div>
                 </div>
 
                 {/* Bank tabs — show if there are feed accounts OR imported sources */}
@@ -3751,6 +3933,7 @@ export default function FinanceApp() {
                       allTransactions={transactions}
                       accounts={orderedActiveAccounts}
                       sourceAccount={activeSrcId !== "all" ? acctById[activeSrcId] : null}
+                      manualJEs={activeSrcId !== "all" ? manualJEs : []}
                       onClassify={classify}
                       onSplit={txn=>setSplitTxn(txn)}
                       onMatchTransfer={matchTransfer}
@@ -3913,6 +4096,7 @@ export default function FinanceApp() {
                                     onEdit={()=>{setModalAccount(a);setShowAcctModal(true);}}
                                     onReconcile={()=>setReconAccount(a)}
                                     onToggleInactive={()=>toggleAccountInactive(a.id)}
+                                    onDrill={()=>setCoaDrillAccount(a)}
                                   />
                                 </td>
                               </tr>
@@ -3944,11 +4128,16 @@ export default function FinanceApp() {
                     const [rs,re]=ranges[lbl];
                     const fmtD=d=>d?d.toISOString().slice(0,10):null;
                     const active=startDate===fmtD(rs)&&endDate===fmtD(re);
-                    return <button key={lbl} className={`date-preset${active?" on":""}`} onClick={()=>{setStartDate(fmtD(rs));setEndDate(fmtD(re));}}>{lbl}</button>;
+                    return <button key={lbl}
+                      style={{padding:"4px 10px",fontSize:12,borderRadius:6,cursor:"pointer",border:`1px solid ${rTheme.border}`,
+                        background:active?rTheme.subtotalBg:rTheme.bg,
+                        color:active?rTheme.subtotalText:rTheme.rowText,fontFamily:"DM Sans,sans-serif"}}
+                      onClick={()=>{setStartDate(fmtD(rs));setEndDate(fmtD(re));}}>{lbl}</button>;
                   })}
                   <div className="report-toolbar-sep"/>
-                  <span className="view-col-label">View columns by</span>
+                  <span className="view-col-label" style={{color:rTheme.rowText}}>View columns by</span>
                   <select className="view-col-select" value={trendMode==="trend"?trendPeriod:"none"}
+                    style={{background:rTheme.bg,color:rTheme.rowText,borderColor:rTheme.border}}
                     onChange={e=>{ if(e.target.value==="none"){setTrendMode("standard");}else{setTrendMode("trend");setTrendPeriod(e.target.value);} }}>
                     <option value="none">Total only</option>
                     <option value="week">Week</option>
@@ -3996,7 +4185,7 @@ export default function FinanceApp() {
                 ) : (
                   <TrendReport type="pnl" accounts={accounts} transactions={transactions}
                     excludedTxns={excludedTxns} startDate={startDate} endDate={endDate}
-                    period={trendPeriod} onDrill={setDrillAccount} rTheme={rTheme} reportNames={reportNames}/>
+                    period={trendPeriod} onDrill={(a,periodKey)=>{setDrillAccount(a);setTrendDrillPeriod(periodKey?{period:trendPeriod,key:periodKey}:null);}} rTheme={rTheme} reportNames={reportNames}/>
                 )}
               </>
             )}
@@ -4016,11 +4205,16 @@ export default function FinanceApp() {
                     const ends={"This Month":new Date(y,m+1,0),"This Year":new Date(y,11,31),"All Time":null};
                     const fmtD=d=>d?d.toISOString().slice(0,10):null;
                     const active=endDate===fmtD(ends[lbl]);
-                    return <button key={lbl} className={`date-preset${active?" on":""}`} onClick={()=>setEndDate(fmtD(ends[lbl]))}>{lbl}</button>;
+                    return <button key={lbl}
+                      style={{padding:"4px 10px",fontSize:12,borderRadius:6,cursor:"pointer",border:`1px solid ${rTheme.border}`,
+                        background:active?rTheme.subtotalBg:rTheme.bg,
+                        color:active?rTheme.subtotalText:rTheme.rowText,fontFamily:"DM Sans,sans-serif"}}
+                      onClick={()=>setEndDate(fmtD(ends[lbl]))}>{lbl}</button>;
                   })}
                   <div className="report-toolbar-sep"/>
-                  <span className="view-col-label">View columns by</span>
+                  <span className="view-col-label" style={{color:rTheme.rowText}}>View columns by</span>
                   <select className="view-col-select" value={trendMode==="trend"?trendPeriod:"none"}
+                    style={{background:rTheme.bg,color:rTheme.rowText,borderColor:rTheme.border}}
                     onChange={e=>{ if(e.target.value==="none"){setTrendMode("standard");}else{setTrendMode("trend");setTrendPeriod(e.target.value);} }}>
                     <option value="none">Total only</option>
                     <option value="week">Week</option>
@@ -4078,7 +4272,7 @@ export default function FinanceApp() {
                 ) : (
                   <TrendReport type="balance" accounts={accounts} transactions={transactions}
                     excludedTxns={excludedTxns} startDate={startDate} endDate={endDate}
-                    period={trendPeriod} onDrill={setDrillAccount} rTheme={rTheme} reportNames={reportNames}/>
+                    period={trendPeriod} onDrill={(a,periodKey)=>{setDrillAccount(a);setTrendDrillPeriod(periodKey?{period:trendPeriod,key:periodKey}:null);}} rTheme={rTheme} reportNames={reportNames}/>
                 )}
               </>
             )}
@@ -4167,14 +4361,32 @@ export default function FinanceApp() {
         onUpdate={(id,fields)=>setTransactions(prev=>prev.map(t=>t.id===id?{...t,...fields}:t))}
         onComplete={completeReconciliation} onClose={()=>setReconAccount(null)}/>}
       {showThemeEditor  && <CustomThemeModal currentTheme={theme}
-        onSave={t=>{ if(t){setCustomTheme(t);setThemeName("Custom");}else{setCustomTheme(null);setThemeName("Obsidian");} }}
+        onSave={t=>{
+          if(t){
+            // Save as override for current theme name
+            setThemeOverrides(prev=>({...prev,[themeName]:t}));
+            setCustomTheme(null);
+          } else {
+            // Reset overrides for this theme
+            setThemeOverrides(prev=>{ const n={...prev}; delete n[themeName]; return n; });
+            setCustomTheme(null);
+          }
+        }}
         onClose={()=>setShowThemeEditor(false)}/>}
       {showReportThemeEditor && <ReportThemeModal currentTheme={customReportTheme}
         onSave={t=>{ setCustomReportTheme(t || {...DEFAULT_REPORT_THEME}); }}
         onClose={()=>setShowReportThemeEditor(false)}/>}
       {splitTxn && <SplitModal transaction={splitTxn} accounts={activeAccounts}
         onSave={saveSplit} onClose={()=>setSplitTxn(null)}/>}
-      {drillAccount     && <DrillModal   account={drillAccount}  transactions={transactions} manualJEs={manualJEs} allAccounts={accounts} startDate={startDate} endDate={endDate} onClose={()=>setDrillAccount(null)} onUpdate={updateTxn} onDelete={deleteTxn} onExclude={(id)=>setExcludedTxns(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n;})} excludedTxns={excludedTxns}
+      {(drillAccount||coaDrillAccount) && <DrillModal
+        account={drillAccount||coaDrillAccount}
+        transactions={transactions} manualJEs={manualJEs} allAccounts={accounts}
+        startDate={trendDrillPeriod ? periodStart(trendDrillPeriod) : startDate}
+        endDate={trendDrillPeriod ? periodEnd(trendDrillPeriod) : endDate}
+        onClose={()=>{setDrillAccount(null);setCoaDrillAccount(null);setTrendDrillPeriod(null);}}
+        onUpdate={updateTxn} onDelete={deleteTxn}
+        onExclude={(id)=>setExcludedTxns(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n;})}
+        excludedTxns={excludedTxns}
         onEditJE={jeOrAction=>{
           if (jeOrAction?._delete) {
             setManualJEs(prev=>prev.filter(e=>e.id!==jeOrAction.id));
@@ -4182,6 +4394,88 @@ export default function FinanceApp() {
             setManualJEs(prev=>{ const ex=prev.find(e=>e.id===jeOrAction.id); return ex?prev.map(e=>e.id===jeOrAction.id?jeOrAction:e):[...prev,jeOrAction]; });
           }
         }}/>}
+
+      {/* Rules slide-in panel */}
+      {showRulesPanel && (
+        <div className="modal-overlay" onClick={()=>setShowRulesPanel(false)}>
+          <div className="modal" style={{width:620,maxWidth:"96vw",maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+            <div className="modal-title">Classification Rules</div>
+            <p style={{fontSize:12,color:"var(--text3)",marginBottom:14}}>Rules auto-assign accounts based on description patterns. First match wins.</p>
+            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+              <button className="btn btn-primary btn-sm" onClick={()=>{setModalRule(null);setShowRuleModal(true);}}>+ New Rule</button>
+            </div>
+            {rules.length===0
+              ? <div className="empty"><div className="empty-icon">⚡</div><div className="empty-title">No rules yet</div></div>
+              : <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Pattern</th><th>Match Type</th><th>Assign To</th><th style={{width:100}}>Actions</th></tr></thead>
+                    <tbody>
+                      {rules.map(r=>{
+                        const acct = acctById[r.accountId];
+                        return (
+                          <tr key={r.id}>
+                            <td><span style={{fontFamily:"DM Mono,monospace",fontSize:12,color:"var(--accent)",background:"rgba(200,241,53,.08)",padding:"2px 7px",borderRadius:4}}>{r.pattern}</span></td>
+                            <td style={{color:"var(--text3)",fontSize:12}}>{r.matchType}</td>
+                            <td>{acct?<span style={{display:"flex",alignItems:"center",gap:6}}><span className={`badge badge-${acct.type.toLowerCase()}`}>{acct.type}</span><span>{acct.name}</span></span>:<span style={{color:"var(--text3)"}}>deleted</span>}</td>
+                            <td><div style={{display:"flex",gap:6}}>
+                              <button className="btn btn-ghost btn-sm" onClick={()=>{setModalRule(r);setShowRuleModal(true);}}>Edit</button>
+                              <button className="btn btn-danger btn-sm" onClick={()=>setRules(p=>p.filter(x=>x.id!==r.id))}>Del</button>
+                            </div></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+            }
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:16}}>
+              <button className="btn btn-ghost" onClick={()=>setShowRulesPanel(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reconciliation history */}
+      {reconHistory.length > 0 && showReconHistory && (
+        <div className="modal-overlay" onClick={()=>setShowReconHistory(false)}>
+          <div className="modal" style={{width:580,maxWidth:"96vw",maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+            <div className="modal-title">Reconciliation History</div>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Account</th><th>Date</th><th>Balance</th><th>Cleared</th><th style={{width:80}}>Action</th></tr></thead>
+                <tbody>
+                  {reconHistory.map(h=>{
+                    const acct = accounts.find(a=>a.id===h.acctId);
+                    return (
+                      <tr key={h.id}>
+                        <td style={{fontSize:13}}>{acct?.name||h.acctId}</td>
+                        <td style={{fontSize:12,fontFamily:"DM Mono,monospace",color:"var(--text3)"}}>{h.date}</td>
+                        <td style={{fontSize:12,fontFamily:"DM Mono,monospace"}}>{fmt(h.balance)}</td>
+                        <td style={{fontSize:12,color:"var(--text3)"}}>{h.clearedIds?.length||0} txns</td>
+                        <td>
+                          <button className="btn btn-danger btn-sm" style={{fontSize:11}}
+                            onClick={()=>{undoReconciliation(h.id);}}>Undo</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:14}}>
+              <button className="btn btn-ghost" onClick={()=>setShowReconHistory(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {reconHistory.length > 0 && (
+        <div style={{position:"fixed",bottom:20,right:20,zIndex:50}}>
+          <button className="btn btn-ghost btn-sm" style={{fontSize:11}}
+            onClick={()=>setShowReconHistory(v=>!v)}>
+            📋 {reconHistory.length} Reconciliation{reconHistory.length!==1?"s":""}
+          </button>
+        </div>
+      )}
     </>
   );
 }
