@@ -45,6 +45,29 @@ const THEMES = {
     text:"#111827",text2:"#4b5563",text3:"#9ca3af",
     red:"#dc2626",green:"#16a34a",blue:"#2563eb",amber:"#d97706",purple:"#7c3aed",
   },
+  "Graphite": {
+    bg:"#878787",surface:"#6e6e6e",surface2:"#6e6e6e",surface3:"#787880",
+    border:"#787880",border2:"#888890",
+    accent:"#8ae8ff",accent2:"#6dd8ef",
+    text:"#ffffff",text2:"#ffffff",text3:"#ffffff",
+    red:"#e88080",green:"#7ad4a0",blue:"#90c4e4",amber:"#e0bc7a",purple:"#c0a4e0",
+  },
+};
+
+const LIGHT_APP_THEME = {
+  bg:"#f4f5f7",surface:"#ffffff",surface2:"#f0f1f3",surface3:"#e8eaed",
+  border:"#d9dde6",border2:"#c4c9d4",
+  accent:"#2563eb",accent2:"#1d4ed8",
+  text:"#111827",text2:"#4b5563",text3:"#9ca3af",
+  red:"#dc2626",green:"#16a34a",blue:"#2563eb",amber:"#d97706",purple:"#7c3aed",
+};
+
+const DARK_APP_THEME = {
+  bg:"#0f0f11",surface:"#17171b",surface2:"#1e1e24",surface3:"#26262f",
+  border:"#2e2e38",border2:"#3a3a48",
+  accent:"#60b4ff",accent2:"#3d9ff5",
+  text:"#f0f0f4",text2:"#9898a8",text3:"#5c5c70",
+  red:"#ff5252",green:"#4ade80",blue:"#60a5fa",amber:"#fbbf24",purple:"#a78bfa",
 };
 
 function themeVars(t) {
@@ -212,7 +235,7 @@ const styles = `
   .stmt-indent{padding-left:34px;}
 
   /* Drill-down modal */
-  .drill-modal{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:0;width:min(900px,96vw);max-height:92vh;overflow:hidden;display:flex;flex-direction:column;}
+  .drill-modal{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:0;width:min(1200px,96vw);max-height:92vh;overflow:hidden;display:flex;flex-direction:column;}
   .drill-header{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;}
   .drill-title{font-family:'DM Serif Display',serif;font-size:18px;}
   .drill-sub{font-size:12px;color:var(--text3);margin-top:3px;font-family:'DM Mono',monospace;}
@@ -240,6 +263,32 @@ const styles = `
   .bank-tab:hover{color:var(--text);}
   .bank-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
   .bank-tab-badge{background:rgba(200,241,53,.15);color:var(--accent);font-size:10px;font-family:'DM Mono',monospace;padding:1px 5px;border-radius:6px;}
+  /* Bank account cards */
+  .bank-cards{display:flex;gap:12px;margin-bottom:20px;overflow-x:auto;padding-bottom:4px;}
+  .bank-cards::-webkit-scrollbar{height:4px;}
+  .bank-cards::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+  .bank-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;min-width:180px;max-width:220px;flex-shrink:0;cursor:pointer;transition:all .15s;position:relative;}
+  .bank-card:hover{border-color:var(--border2);background:var(--surface2);}
+  .bank-card.active{background:var(--accent);border-color:var(--accent);}
+  .bank-card.active .bank-card-name{color:#0f0f11;}
+  .bank-card.active .bank-card-label{color:rgba(0,0,0,.6);}
+  .bank-card.active .bank-card-amount{color:#0f0f11;}
+  .bank-card.active .bank-card-badge{background:rgba(0,0,0,.15);color:#0f0f11;}
+  .bank-card.active .bank-card-updated{color:rgba(0,0,0,.5);}
+  .bank-card.active .bank-card-check{color:#0f0f11;}
+  .bank-card-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;}
+  .bank-card-name{font-size:12px;font-weight:600;color:var(--text);line-height:1.3;flex:1;margin-right:6px;}
+  .bank-card-icons{display:flex;gap:4px;align-items:center;flex-shrink:0;}
+  .bank-card-icon{font-size:13px;color:var(--text3);cursor:pointer;padding:1px 3px;border-radius:3px;}
+  .bank-card-icon:hover{color:var(--text);}
+  .bank-card-section{margin-bottom:8px;}
+  .bank-card-amount{font-family:'DM Mono',monospace;font-size:18px;font-weight:700;color:var(--text);line-height:1;}
+  .bank-card-label{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);font-family:'DM Mono',monospace;margin-top:2px;}
+  .bank-card-updated{font-size:9px;color:var(--text3);margin-top:1px;}
+  .bank-card-divider{height:1px;background:var(--border);margin:8px 0;}
+  .bank-card-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-family:'DM Mono',monospace;padding:2px 6px;border-radius:8px;background:rgba(251,191,36,.15);color:var(--amber);font-weight:600;}
+  .bank-card-check{font-size:14px;color:var(--green);}
+  .bank-card-footer{display:flex;align-items:center;justify-content:space-between;}
 
   /* Section divider */
   .section-divider{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.4px;font-family:'DM Mono',monospace;padding:12px 0 8px;display:flex;align-items:center;gap:10px;}
@@ -358,12 +407,12 @@ const styles = `
   .je-entry-memo{font-size:13px;color:var(--text);font-weight:500;}
 
   /* Trend report */
-  .trend-wrap{overflow-x:auto;border-radius:var(--radius-lg);border:1px solid var(--border);}
-  .trend-table{width:100%;border-collapse:collapse;font-size:12px;}
+  .trend-wrap{overflow-x:auto;border-radius:var(--radius-lg);border:1px solid var(--border);width:fit-content;max-width:100%;margin:0 auto;}
+  .trend-table{width:auto;border-collapse:collapse;font-size:12px;}
   .trend-table th{background:var(--surface2);color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.8px;padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;border-bottom:1px solid var(--border);white-space:nowrap;}
   .trend-table th:first-child{text-align:left;min-width:140px;}
   .trend-table td{padding:7px 10px;border-bottom:1px solid rgba(46,46,56,.4);text-align:right;font-family:'DM Mono',monospace;color:var(--text2);white-space:nowrap;}
-  .trend-table td:first-child{text-align:left;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;}
+  .trend-table td:first-child{text-align:left;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;white-space:nowrap;}
   .trend-table tr:hover td{background:var(--surface2);}
   .trend-table tr.trend-group td{background:var(--surface2);font-weight:600;color:var(--text);}
   .trend-table tr.trend-total td{background:rgba(200,241,53,.06);font-weight:700;border-top:1px solid var(--border2);}
@@ -396,15 +445,16 @@ const styles = `
   .sort-arrow.active{opacity:1;color:var(--accent);}
 
   /* ── QuickBooks Desktop-style financial reports (white paper look) ── */
-  .qb-report{background:#fff;border:1px solid #c8c8c8;border-radius:4px;overflow:hidden;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.18);}
+  .qb-report{background:#fff;border:1px solid #c8c8c8;border-radius:4px;overflow-x:auto;overflow-y:hidden;margin:0 auto 20px;box-shadow:0 2px 8px rgba(0,0,0,.18);width:fit-content;min-width:800px;max-width:100%;}
   /* Centered header block */
   .qb-header{text-align:center;padding:18px 40px 12px;background:#fff;border-bottom:1px solid #ddd;}
   .qb-co{display:block;font-size:13px;color:#333;font-family:'DM Sans',sans-serif;margin-bottom:3px;font-weight:400;}
   .qb-title{display:block;font-size:18px;color:#111;font-family:'DM Sans',sans-serif;font-weight:700;margin-bottom:3px;}
   .qb-date{font-size:12px;color:#555;font-family:'DM Sans',sans-serif;}
   /* Column header bar */
-  .qb-col-heads{display:flex;justify-content:flex-end;padding:5px 32px;background:#f0f0f0;border-bottom:1px solid #bbb;}
-  .qb-col-head{font-size:11px;font-weight:700;color:#333;min-width:140px;text-align:right;text-decoration:underline;}
+  .qb-col-heads{display:flex;justify-content:flex-end;padding:4px 32px;background:#f0f0f0;border-bottom:1px solid #bbb;}
+  .qb-col-head{font-size:11px;font-family:'DM Mono',monospace;font-weight:700;color:#555;text-align:right;padding-right:8px;cursor:col-resize;user-select:none;border-left:3px solid #bbb;padding-left:6px;}
+  .qb-col-head:hover{border-left-color:#888;color:#111;background:#e8e8e8;}
   /* Section heading (INCOME, EXPENSE, ASSETS...) */
   .qb-section{padding:10px 32px 3px;font-size:12px;font-weight:700;color:var(--rpt-section-text,#111);background:var(--rpt-section-bg,#fff);border-top:none;}
   /* Sub-section label */
@@ -418,11 +468,11 @@ const styles = `
   .qb-row.no-click{cursor:default;}
   .qb-row.no-click:hover{background:#fff;}
   /* Name and value */
-  .qb-label{flex:1;font-size:12px;color:#111;font-family:'DM Sans',sans-serif;line-height:1.7;display:flex;align-items:center;gap:4px;}
+  .qb-label{flex:1;min-width:0;font-size:12px;color:#111;font-family:'DM Sans',sans-serif;line-height:1.7;display:flex;align-items:center;gap:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .qb-label.italic{font-style:italic;color:#888;}
   .qb-hint{font-size:10px;color:#aaa;opacity:0;transition:opacity .1s;}
   .qb-row:hover .qb-hint{opacity:1;}
-  .qb-val{min-width:140px;text-align:right;font-size:12px;font-family:'DM Mono',monospace;color:#111;white-space:nowrap;padding-right:4px;}
+  .qb-val{width:var(--report-col-w,140px);min-width:var(--report-col-w,140px);max-width:var(--report-col-w,140px);flex-shrink:0;text-align:right;font-size:12px;font-family:'DM Mono',monospace;color:#111;white-space:nowrap;padding-right:8px;}
   .qb-val.pos{color:#1a7c3a;}
   .qb-val.neg{color:#c0392b;}
   /* Spacer */
@@ -431,14 +481,14 @@ const styles = `
   .qb-subtotal{display:flex;align-items:baseline;padding:3px 32px;background:#fff;}
   .qb-subtotal.l1{padding-left:48px;}
   .qb-subtotal.l2{padding-left:64px;}
-  .qb-subtotal-label{flex:1;font-size:12px;font-weight:700;color:#111;font-family:'DM Sans',sans-serif;}
-  .qb-subtotal-val{min-width:140px;text-align:right;font-size:12px;font-family:'DM Mono',monospace;font-weight:700;color:#111;border-top:1px solid #111;padding-top:2px;white-space:nowrap;padding-right:4px;}
+  .qb-subtotal-label{flex:1;font-size:12px;font-weight:700;color:#111;font-family:'DM Sans',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .qb-subtotal-val{width:var(--report-col-w,140px);min-width:var(--report-col-w,140px);max-width:var(--report-col-w,140px);flex-shrink:0;text-align:right;font-size:12px;font-family:'DM Mono',monospace;font-weight:700;color:#111;border-top:1px solid #111;padding-top:2px;white-space:nowrap;padding-right:8px;}
   .qb-subtotal-val.pos{color:#1a7c3a;}
   .qb-subtotal-val.neg{color:#c0392b;}
   /* Grand total — double underline */
   .qb-grand{display:flex;align-items:baseline;padding:4px 32px 8px;background:#fff;border-top:1px solid #ccc;margin-top:4px;}
-  .qb-grand-label{flex:1;font-size:12px;font-weight:700;color:#111;font-family:'DM Sans',sans-serif;}
-  .qb-grand-val{min-width:140px;text-align:right;font-size:12px;font-family:'DM Mono',monospace;font-weight:700;color:#111;border-bottom:3px double #111;padding-bottom:3px;white-space:nowrap;padding-right:4px;}
+  .qb-grand-label{flex:1;font-size:12px;font-weight:700;color:#111;font-family:'DM Sans',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .qb-grand-val{width:var(--report-col-w,140px);min-width:var(--report-col-w,140px);max-width:var(--report-col-w,140px);flex-shrink:0;text-align:right;font-size:12px;font-family:'DM Mono',monospace;font-weight:700;color:#111;border-bottom:3px double #111;padding-bottom:3px;white-space:nowrap;padding-right:8px;}
   .qb-grand-val.pos{color:#1a7c3a;}
   .qb-grand-val.neg{color:#c0392b;}
   /* Legacy compat */
@@ -1240,12 +1290,12 @@ function DrillRowEditable({ t, isDebit, isCredit, abs, counterpart, running, isE
 
   return (
     <tr style={{borderBottom:"1px solid var(--border)",opacity:isExcluded?.85:1,background:isExcluded?"rgba(255,82,82,.03)":""}}>
-      <td style={{...p,fontSize:12,color:"var(--text3)",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>{t.date}</td>
-      <td style={{...p,fontSize:13,color:"var(--text)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</td>
-      <td className="mob-hide-on-mobile" style={{...p,fontSize:12,color:"var(--text2)"}}>{counterpart?.name||"—"}</td>
-      <td style={{...p,textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:isDebit?"var(--blue)":"var(--text3)"}}>{isDebit?fmt(abs):""}</td>
-      <td style={{...p,textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:isCredit?"var(--purple)":"var(--text3)"}}>{isCredit?fmt(abs):""}</td>
-      <td style={{...p,textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:running>=0?"var(--green)":"var(--red)"}}>{fmt(running)}</td>
+      <td style={{...p,fontSize:12,color:"var(--text3)",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.date}</td>
+      <td style={{...p,fontSize:13,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</td>
+      <td style={{...p,fontSize:12,color:"var(--text2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{counterpart?.name||"—"}</td>
+      <td style={{...p,textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:isDebit?"var(--blue)":"var(--text3)",overflow:"hidden"}}>{isDebit?fmt(abs):""}</td>
+      <td style={{...p,textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:isCredit?"var(--purple)":"var(--text3)",overflow:"hidden"}}>{isCredit?fmt(abs):""}</td>
+      <td style={{...p,textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:"var(--text)",overflow:"hidden"}}>{fmt(running)}</td>
       <td style={{...p,whiteSpace:"nowrap"}}>
         {t.isJE
           ? <button className="drill-je-btn" onClick={()=>onEditJE&&onEditJE(t.jeId)}>✎ JE</button>
@@ -1262,6 +1312,26 @@ function DrillModal({ account, transactions, manualJEs, allAccounts, startDate, 
   const [editingJE, setEditingJE] = useState(null);
   const [selected, setSelected] = useState(new Set());
   const [lastCheckedIdx, setLastCheckedIdx] = useState(null);
+  const [drillColWidths, setDrillColWidths] = useState({date:100,desc:340,counterpart:160,debit:100,credit:100,balance:110,actions:70});
+  const setDCW = (k,w) => setDrillColWidths(p=>({...p,[k]:Math.max(50,w)}));
+  const drillResizeTh = (key, label, align="left", extra={}) => {
+    const onMouseDown = e => {
+      e.preventDefault();
+      const sx=e.clientX, sw=drillColWidths[key];
+      const move = e => setDCW(key, sw+(e.clientX-sx));
+      const up = () => { document.removeEventListener("mousemove",move); document.removeEventListener("mouseup",up); };
+      document.addEventListener("mousemove",move);
+      document.addEventListener("mouseup",up);
+    };
+    return (
+      <th key={key} style={{padding:"9px 14px",background:"var(--surface2)",borderBottom:"1px solid var(--border)",
+        fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase",
+        textAlign:align,width:drillColWidths[key],position:"relative",userSelect:"none",...extra}}>
+        {label}
+        <span onMouseDown={onMouseDown} style={{position:"absolute",right:0,top:0,bottom:0,width:6,cursor:"col-resize",zIndex:1,background:"transparent"}}/>
+      </th>
+    );
+  };
 
   // Esc key closes modal
   useEffect(()=>{
@@ -1377,15 +1447,24 @@ function DrillModal({ account, transactions, manualJEs, allAccounts, startDate, 
         <div className="drill-body">
           {rows.length===0
             ? <div className="empty"><div className="empty-icon">🔍</div><div className="empty-title">No entries in this range</div></div>
-            : <table style={{width:"100%",borderCollapse:"collapse"}}>
+            : <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
+                <colgroup>
+                  <col style={{width:drillColWidths.date}}/>
+                  <col style={{width:drillColWidths.desc}}/>
+                  <col style={{width:drillColWidths.counterpart}}/>
+                  <col style={{width:drillColWidths.debit}}/>
+                  <col style={{width:drillColWidths.credit}}/>
+                  <col style={{width:drillColWidths.balance}}/>
+                  <col style={{width:drillColWidths.actions}}/>
+                </colgroup>
                 <thead><tr>
-                  {th("Date")}
-                  {th("Description")}
-                  <th className="mob-hide-on-mobile" style={{padding:"9px 14px",background:"var(--surface2)",borderBottom:"1px solid var(--border)",fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase"}}>Counterpart</th>
-                  {th("Debit","right")}
-                  {th("Credit","right")}
-                  {th("Balance","right")}
-                  {th("","right")}
+                  {drillResizeTh("date","Date")}
+                  {drillResizeTh("desc","Description")}
+                  {drillResizeTh("counterpart","Counterpart")}
+                  {drillResizeTh("debit","Debit","right")}
+                  {drillResizeTh("credit","Credit","right")}
+                  {drillResizeTh("balance","Balance","right")}
+                  {drillResizeTh("actions","","right")}
                 </tr></thead>
                 <tbody>
                   {rowsWithBalance.map(({t, isDebit, isCredit, abs, counterpart, running})=>(
@@ -2408,8 +2487,9 @@ function TrendReport({ type, accounts, transactions, excludedTxns, startDate, en
     background:rt.subtotalBg, color:rt.subtotalText, borderColor:rt.border,
     textAlign:"right", fontFamily:"DM Mono,monospace", fontSize:11,
     fontWeight:700, padding:"8px 10px", whiteSpace:"nowrap",
-    width: colWidths[p]||COL_W, minWidth: colWidths[p]||COL_W,
-    position:"relative", userSelect:"none",
+    width: colWidths[p]||COL_W, minWidth: Math.max(colWidths[p]||COL_W, 80),
+    maxWidth: colWidths[p]||COL_W,
+    position:"relative", userSelect:"none", overflow:"hidden",
   });
 
   const valStyle = (n, neg) => ({
@@ -2483,10 +2563,10 @@ function TrendReport({ type, accounts, transactions, excludedTxns, startDate, en
         <div className="qb-title" style={{color:rt.headerText}}>{reportNames?.[type==="pnl"?"pnl":"balance"]||""}</div>
         <div className="qb-date" style={{color:rt.headerText}}>{dateLabel}</div>
       </div>
-      <table style={{width:"100%",borderCollapse:"collapse",background:rt.bg}}>
+      <table style={{width:"auto",minWidth:"100%",borderCollapse:"collapse",background:rt.bg}}>
         <thead>
           <tr>
-            <th style={{...thStyle("name"),textAlign:"left",width:"auto",minWidth:160,paddingLeft:32}}>Account</th>
+            <th style={{...thStyle("name"),textAlign:"left",width:"auto",minWidth:180,maxWidth:"none",paddingLeft:32}}>Account</th>
             {periods.map(p=>(
               <th key={p} style={thStyle(p)}>
                 {formatPeriodKey(p,period)}
@@ -2742,7 +2822,7 @@ function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete })
 // ─────────────────────────────────────────────────────────────────────────────
 // RECONCILIATION MODAL
 // ─────────────────────────────────────────────────────────────────────────────
-function ReconcileModal({ account, transactions, manualJEs, accounts, onComplete, onUpdate, onClose }) {
+function ReconcileModal({ account, transactions, manualJEs, accounts, reconHistory, onUndo, onComplete, onUpdate, onClose }) {
   const [endBalance,   setEndBalance]   = useState("");
   const [endDate,      setEndDate]      = useState(()=>new Date().toISOString().slice(0,10));
   const [includeAfter, setIncludeAfter] = useState(false);
@@ -2823,7 +2903,11 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, onComplete
     const {debit,credit} = getDebitCredit(i);
     return isDebitNormal ? s + debit - credit : s + credit - debit;
   },0);
-  const endBal = parseFloat(endBalance)||0;
+  // For liability/credit card accounts, the user enters a positive statement balance
+  // (e.g. "500" meaning you owe $500), so we negate it internally to match the sign convention
+  const endBal = isDebitNormal
+    ? (parseFloat(endBalance)||0)
+    : -(parseFloat(endBalance)||0);
   const diff   = endBal - clearedTotal;
   const isBalanced = Math.abs(diff)<0.005;
   const toggle = id => setCleared(s=>{ const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n; });
@@ -2847,7 +2931,7 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, onComplete
           <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}/>
         </div>
         <div className="field"><label>Ending Balance (from statement)</label>
-          <input type="number" value={endBalance} onChange={e=>setEndBalance(e.target.value)} placeholder="e.g. 4250.00" step="0.01"/>
+          <input type="number" value={endBalance} onChange={e=>setEndBalance(e.target.value)} placeholder={isDebitNormal ? "e.g. 4250.00" : "e.g. 500.00 (positive)"} step="0.01"/>
         </div>
         <div className="field">
           <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
@@ -2859,6 +2943,22 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, onComplete
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary ml-auto" disabled={!endBalance||!endDate} onClick={()=>setStep(2)}>Continue →</button>
         </div>
+        {(reconHistory||[]).filter(h=>h.acctId===account.id).length > 0 && (
+          <div style={{marginTop:18,paddingTop:14,borderTop:"1px solid var(--border)"}}>
+            <div style={{fontSize:11,color:"var(--text3)",textTransform:"uppercase",letterSpacing:"1px",fontFamily:"DM Mono,monospace",marginBottom:10}}>Previous Reconciliations</div>
+            {(reconHistory||[]).filter(h=>h.acctId===account.id).map(h=>(
+              <div key={h.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid var(--border)"}}>
+                <div>
+                  <span style={{fontFamily:"DM Mono,monospace",fontSize:12,color:"var(--text)"}}>{h.date}</span>
+                  <span style={{fontSize:12,color:"var(--text3)",marginLeft:10}}>Balance: <span style={{fontFamily:"DM Mono,monospace",color:"var(--text2)"}}>{fmt(h.balance)}</span></span>
+                  <span style={{fontSize:11,color:"var(--text3)",marginLeft:10}}>{h.clearedIds?.length||0} txns cleared</span>
+                </div>
+                <button className="btn btn-danger btn-sm" style={{fontSize:11}}
+                  onClick={()=>{ onUndo(h.id); onClose(); }}>Undo</button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2967,19 +3067,20 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, onComplete
 // ─────────────────────────────────────────────────────────────────────────────
 // CUSTOM THEME EDITOR
 // ─────────────────────────────────────────────────────────────────────────────
-function CustomThemeModal({ currentTheme, onSave, onClose }) {
+function CustomThemeModal({ currentTheme, mode, onSave, onClose }) {
   const fields = [
     {k:"bg",label:"Background"},{k:"surface",label:"Surface"},{k:"surface2",label:"Surface 2"},
     {k:"accent",label:"Accent"},{k:"text",label:"Text"},{k:"text2",label:"Text 2"},
     {k:"text3",label:"Text 3"},{k:"green",label:"Positive"},{k:"red",label:"Negative"},
     {k:"blue",label:"Blue"},{k:"amber",label:"Amber"},{k:"border",label:"Border"},
   ];
-  const [draft, setDraft] = useState({...currentTheme});
+  const defaults = mode === "light" ? LIGHT_APP_THEME : DARK_APP_THEME;
+  const [draft, setDraft] = useState({...defaults, ...(currentTheme||{})});
   const set = (k,v) => { const nd={...draft,[k]:v}; setDraft(nd); onSave(nd); };
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{width:520,maxWidth:"96vw"}} onClick={e=>e.stopPropagation()}>
-        <div className="modal-title">Custom Theme</div>
+        <div className="modal-title">{mode === "light" ? "☀ Light" : "☾ Dark"} App Theme</div>
         <p style={{fontSize:12,color:"var(--text3)",marginBottom:14}}>Colours update live as you pick.</p>
         <div className="theme-editor-grid">
           {fields.map(f=>(
@@ -2991,9 +3092,8 @@ function CustomThemeModal({ currentTheme, onSave, onClose }) {
           ))}
         </div>
         <div className="flex gap-8 mt-14">
-          <button className="btn btn-ghost" style={{color:"var(--text3)"}} onClick={()=>{ onSave(null); onClose(); }}>Reset</button>
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary ml-auto" onClick={()=>{ onSave(draft); onClose(); }}>Save Theme</button>
+          <button className="btn btn-ghost" style={{color:"var(--text3)"}} onClick={()=>{ onSave({...defaults}); onClose(); }}>Reset</button>
+          <button className="btn btn-ghost" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>
@@ -3020,7 +3120,24 @@ const DEFAULT_REPORT_THEME = {
   neg:         "#b91c1c",
 };
 
-function ReportThemeModal({ currentTheme, onSave, onClose }) {
+const DARK_REPORT_THEME = {
+  bg:          "#1e1e24",
+  headerBg:    "#17171b",
+  headerText:  "#f0f0f4",
+  sectionBg:   "#17171b",
+  sectionText: "#a0a0b0",
+  rowEven:     "#26262f",
+  rowText:     "#e0e0e8",
+  subtotalBg:  "#2e2e38",
+  subtotalText:"#f0f0f4",
+  grandBg:     "#3a3a48",
+  grandText:   "#ffffff",
+  border:      "#3a3a48",
+  pos:         "#4ade80",
+  neg:         "#ff6b6b",
+};
+
+function ReportThemeModal({ currentTheme, mode, onSave, onClose }) {
   const fields = [
     {k:"bg",           label:"Report Background"},
     {k:"headerBg",     label:"Header Background"},
@@ -3037,14 +3154,16 @@ function ReportThemeModal({ currentTheme, onSave, onClose }) {
     {k:"pos",          label:"Positive Value"},
     {k:"neg",          label:"Negative Value"},
   ];
-  const base = {...DEFAULT_REPORT_THEME, ...(currentTheme||{})};
-  const [draft, setDraft] = useState(base);
-  const set = (k,v) => setDraft(p=>({...p,[k]:v}));
+  const defaults = mode === "dark" ? DARK_REPORT_THEME : DEFAULT_REPORT_THEME;
+  const [draft, setDraft] = useState({...defaults, ...(currentTheme||{})});
+  const set = (k,v) => { const nd={...draft,[k]:v}; setDraft(nd); onSave(nd); };
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{width:540,maxWidth:"96vw"}} onClick={e=>e.stopPropagation()}>
-        <div className="modal-title">Report Theme</div>
-        <p style={{fontSize:12,color:"var(--text3)",marginBottom:14}}>Customise the colours used on printed reports.</p>
+        <div className="modal-title">
+          {mode === "dark" ? "☾ Dark" : "☀ Light"} Report Theme
+        </div>
+        <p style={{fontSize:12,color:"var(--text3)",marginBottom:14}}>Colours update live as you pick.</p>
         <div className="theme-editor-grid">
           {fields.map(f=>(
             <div key={f.k} className="theme-swatch-input">
@@ -3055,9 +3174,8 @@ function ReportThemeModal({ currentTheme, onSave, onClose }) {
           ))}
         </div>
         <div className="flex gap-8 mt-14">
-          <button className="btn btn-ghost" style={{color:"var(--text3)"}} onClick={()=>{ onSave(null); onClose(); }}>Reset</button>
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary ml-auto" onClick={()=>{ onSave(draft); onClose(); }}>Save</button>
+          <button className="btn btn-ghost" style={{color:"var(--text3)"}} onClick={()=>{ onSave({...defaults}); onClose(); }}>Reset</button>
+          <button className="btn btn-ghost" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>
@@ -3236,7 +3354,7 @@ export default function FinanceApp() {
   const [startDate,      setStartDate]     = useState(null);
   const [endDate,        setEndDate]       = useState(null);
   const [drillAccount,   setDrillAccount]  = useState(null);
-  const [themeName,      setThemeName]     = useState("Obsidian");
+  const [appThemeMode,   setAppThemeMode]  = useState("dark"); // "light" | "dark"
   const [manualJEs,      setManualJEs]     = useState([]);
   const [accountOrder,   setAccountOrder]  = useState(null);
   const [coaDragId,      setCoaDragId]     = useState(null);
@@ -3250,20 +3368,23 @@ export default function FinanceApp() {
   const [reconHistory,    setReconHistory]    = useState([]);
   const [showReconHistory,setShowReconHistory]= useState(false);
   const [reconAccount,    setReconAccount]    = useState(null);
-  const [customTheme,     setCustomTheme]     = useState(null);
-  const [showThemeEditor, setShowThemeEditor] = useState(false);
-  const [customReportTheme,     setCustomReportTheme]     = useState({...DEFAULT_REPORT_THEME});
+  const [customAppLightTheme, setCustomAppLightTheme] = useState({...LIGHT_APP_THEME});
+  const [customAppDarkTheme,  setCustomAppDarkTheme]  = useState({...DARK_APP_THEME});
+  const [showThemeEditor,     setShowThemeEditor]      = useState(false);
+  const [customLightTheme,      setCustomLightTheme]      = useState({...DEFAULT_REPORT_THEME});
+  const [customDarkTheme,       setCustomDarkTheme]       = useState({...DARK_REPORT_THEME});
+  const [reportThemeMode,       setReportThemeMode]       = useState("light"); // "light" | "dark"
   const [splitTxn,        setSplitTxn]        = useState(null);
   const [globalSearch,    setGlobalSearch]    = useState("");
   const [showSearch,      setShowSearch]      = useState(false);
   const [showReportThemeEditor, setShowReportThemeEditor] = useState(false);
   const [showRulesPanel,  setShowRulesPanel]  = useState(false);
-  const [themeOverrides,  setThemeOverrides]  = useState({});
-  const [defaultThemeName,setDefaultThemeName]= useState("Obsidian");
+
   const [coaDrillAccount, setCoaDrillAccount] = useState(null);
   const [trendDrillPeriod,setTrendDrillPeriod]= useState(null);
   const [plaidAccounts,   setPlaidAccounts]   = useState([]);
   const [plaidSyncing,    setPlaidSyncing]    = useState(false);
+  const [bankBalances,    setBankBalances]    = useState({}); // {[sourceId]: {current, available, updatedAt}}
   const [showPlaidModal,  setShowPlaidModal]  = useState(false);
   const [showPlaidMapping,setShowPlaidMapping]= useState(false);
   const [plaidMappingAccounts, setPlaidMappingAccounts] = useState([]); // accounts returned by Plaid to map
@@ -3291,6 +3412,7 @@ export default function FinanceApp() {
     saveTimerRef.current = setTimeout(() => {
       const payload = pendingSaveRef.current;
       if (!payload || (!payload.accounts?.length && !payload.transactions?.length)) return;
+      try { localStorage.setItem("ledger_data", JSON.stringify(payload)); } catch(e) {}
       fetch(`${API}/api/data`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3305,9 +3427,10 @@ export default function FinanceApp() {
   useEffect(() => {
     stateRef.current = {
       transactions, accounts, sources, rules, manualJEs,
-      accountOrder, reportNames, reconciliations, reconHistory, customTheme,
-      themeName, showCoaInactive, excludedTxns: [...excludedTxns],
-      customReportTheme, themeOverrides, defaultThemeName,
+      accountOrder, reportNames, reconciliations, reconHistory,
+      appThemeMode, customAppLightTheme, customAppDarkTheme,
+      showCoaInactive, excludedTxns: [...excludedTxns],
+      customLightTheme, customDarkTheme, reportThemeMode,
     };
   });
 
@@ -3450,6 +3573,7 @@ export default function FinanceApp() {
       await syncPlaidAccountToSource(m.plaidAccountId, m.coaAccountId);
     }
     setTimeout(save, 3000);
+    fetchPlaidBalances();
     setActiveSrcId(mappings.find(m=>m.coaAccountId)?.coaAccountId || "all");
     setPage("classify");
   };
@@ -3483,6 +3607,31 @@ export default function FinanceApp() {
     }
   };
 
+  const fetchPlaidBalances = async () => {
+    try {
+      const res = await fetch(`${API}/api/plaid/balances`);
+      if (!res.ok) { console.warn("Balance fetch non-ok:", res.status); return; }
+      const data = await res.json();
+      console.log("Balance data:", data);
+      if (data.balances) {
+        const newBalances = {};
+        data.balances.forEach(b => {
+          // Key by mappedToId (COA account id) so it matches s.id in the card
+          const sourceId = b.mappedToId || b.plaidAccountId;
+          newBalances[sourceId] = {
+            current: b.current,
+            available: b.available,
+            updatedAt: new Date(),
+          };
+          console.log(`Balance set for ${sourceId}:`, b.current);
+        });
+        setBankBalances(prev => ({...prev, ...newBalances}));
+      }
+    } catch(e) {
+      console.warn("Could not fetch balances:", e);
+    }
+  };
+
   const syncAllPlaid = async () => {
     let total = 0;
     for (const pa of plaidAccounts) {
@@ -3490,6 +3639,7 @@ export default function FinanceApp() {
       const count = await syncPlaidAccountToSource(pa.plaidAccountId, sourceId);
       total += count || 0;
     }
+    await fetchPlaidBalances();
     if (total > 0) {
       setTimeout(save, 3000);
       alert(`Imported ${total} new transaction${total!==1?"s":""}. Saving…`);
@@ -3735,12 +3885,12 @@ export default function FinanceApp() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   const theme = useMemo(()=>{
-    const base = THEMES[themeName] || THEMES[defaultThemeName] || THEMES["Obsidian"];
-    const overrides = themeOverrides[themeName] || {};
-    return customTheme || {...base, ...overrides};
-  },[customTheme, themeName, themeOverrides, defaultThemeName]);
-  const rTheme = {...DEFAULT_REPORT_THEME, ...(customReportTheme||{})};
-  const rColStyle = {minWidth:reportColWidth, width:reportColWidth};
+    return appThemeMode === "light"
+      ? {...LIGHT_APP_THEME, ...(customAppLightTheme||{})}
+      : {...DARK_APP_THEME,  ...(customAppDarkTheme||{})};
+  },[appThemeMode, customAppLightTheme, customAppDarkTheme]);
+  const rTheme = reportThemeMode === "dark" ? {...DARK_REPORT_THEME, ...(customDarkTheme||{})} : {...DEFAULT_REPORT_THEME, ...(customLightTheme||{})};
+  const rColStyle = {minWidth:reportColWidth, width:reportColWidth, maxWidth:reportColWidth, textAlign:'right', flexShrink:0};
 
   // Recursive tree renderer for reports
   // Computes subtree balance (own + all descendants) so parents show even if own balance is 0
@@ -3775,8 +3925,8 @@ export default function FinanceApp() {
           </div>,
           ...renderAccountTree(allAccounts, a.id, depth+1, posClass, negClass),
           <div key={`tot-${a.id}`} className="qb-subtotal" style={{paddingLeft:indent}}>
-            <span className="qb-subtotal-label" style={rColStyle}>Total {a.name}</span>
-            <span style={rColStyle} className={`qb-subtotal-val${sub>0?` ${posClass}`:sub<0?` ${negClass}`:""}`}>{fmt(sub)}</span>
+            <span className="qb-subtotal-label">Total {a.name}</span>
+            <span className={`qb-subtotal-val${sub>0?` ${posClass}`:sub<0?` ${negClass}`:""}`}>{fmt(sub)}</span>
           </div>,
         ];
       }
@@ -3786,7 +3936,7 @@ export default function FinanceApp() {
           <span className="qb-label" style={indent?{paddingLeft:indent}:{}}>
             {depth>0?"└ ":""}{a.name}<span className="qb-hint">▸</span>
           </span>
-          <span style={rColStyle} className={`qb-val${sub>0?` ${posClass}`:sub<0?` ${negClass}`:""}`}>{fmt(sub)}</span>
+          <span className={`qb-val${sub>0?` ${posClass}`:sub<0?` ${negClass}`:""}`}>{fmt(sub)}</span>
         </div>,
       ];
     });
@@ -3817,20 +3967,71 @@ export default function FinanceApp() {
           if (d.accountOrder)          setAccountOrder(d.accountOrder);
           if (d.reportNames)           setReportNames(d.reportNames);
           if (d.reconciliations && Object.keys(d.reconciliations).length) setReconciliations(d.reconciliations);
-          if (d.reconHistory?.length)  setReconHistory(d.reconHistory);
-          if (d.customTheme)           setCustomTheme(d.customTheme);
-          if (d.themeName)             setThemeName(d.themeName);
+          if (d.reconHistory?.length) {
+            // Keep only entries that have a timestamp (added with undo feature).
+            // Old entries predate this and cannot be properly undone, so drop them.
+            const history = d.reconHistory.filter(h => !!h.timestamp);
+            setReconHistory(history);
+            // If we dropped old entries, immediately write the cleaned data back
+            if (history.length !== d.reconHistory.length) {
+              fetch(`${API}/api/data`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({...d, reconHistory: history}),
+              }).catch(e => console.warn("Could not clean reconHistory on server:", e));
+              try { localStorage.setItem("ledger_data", JSON.stringify({...d, reconHistory: history})); } catch(e) {}
+            }
+          }
+          if (d.appThemeMode)          setAppThemeMode(d.appThemeMode);
+          if (d.customAppLightTheme)   setCustomAppLightTheme(d.customAppLightTheme);
+          if (d.customAppDarkTheme)    setCustomAppDarkTheme(d.customAppDarkTheme);
           if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
           if (d.excludedTxns?.length)  setExcludedTxns(new Set(d.excludedTxns));
-          if (d.customReportTheme)     setCustomReportTheme(d.customReportTheme);
-          if (d.themeOverrides)        setThemeOverrides(d.themeOverrides);
-          if (d.defaultThemeName)      setDefaultThemeName(d.defaultThemeName);
+          if (d.customLightTheme)      setCustomLightTheme(d.customLightTheme);
+          if (d.customDarkTheme)       setCustomDarkTheme(d.customDarkTheme);
+          if (d.reportThemeMode)       setReportThemeMode(d.reportThemeMode);
+
         };
         apply();
         setTimeout(() => { initialLoadDone.current = true; }, 3000);
+        // Fetch Plaid balances in background after load
+        setTimeout(() => fetchPlaidBalances(), 4000);
       })
       .catch((e) => {
-        console.warn("Could not load from server:", e);
+        console.warn("Could not load from server, trying localStorage:", e);
+        try {
+          const raw = localStorage.getItem("ledger_data");
+          if (raw) {
+            const d = JSON.parse(raw);
+            if (d.transactions?.length)  setTransactions(d.transactions);
+            if (d.accounts?.length)      setAccounts(d.accounts.map(a=>({
+              ...a,
+              parentId: (!a.parentId || a.parentId === "null" || a.parentId === "undefined") ? "" : a.parentId,
+            })));
+            if (d.sources?.length)       setSources(d.sources);
+            if (d.rules?.length)         setRules(d.rules);
+            if (d.manualJEs?.length)     setManualJEs(d.manualJEs);
+            if (d.accountOrder)          setAccountOrder(d.accountOrder);
+            if (d.reportNames)           setReportNames(d.reportNames);
+            if (d.reconciliations && Object.keys(d.reconciliations).length) setReconciliations(d.reconciliations);
+            if (d.reconHistory?.length) {
+              const history = d.reconHistory.filter(h => !!h.timestamp);
+              setReconHistory(history);
+              if (history.length !== d.reconHistory.length) {
+                try { localStorage.setItem("ledger_data", JSON.stringify({...d, reconHistory: history})); } catch(e) {}
+              }
+            }
+            if (d.appThemeMode)          setAppThemeMode(d.appThemeMode);
+            if (d.customAppLightTheme)   setCustomAppLightTheme(d.customAppLightTheme);
+            if (d.customAppDarkTheme)    setCustomAppDarkTheme(d.customAppDarkTheme);
+            if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
+            if (d.excludedTxns?.length)  setExcludedTxns(new Set(d.excludedTxns));
+            if (d.customLightTheme)      setCustomLightTheme(d.customLightTheme);
+          if (d.customDarkTheme)       setCustomDarkTheme(d.customDarkTheme);
+          if (d.reportThemeMode)       setReportThemeMode(d.reportThemeMode);
+
+          }
+        } catch(le) { console.warn("localStorage load failed:", le); }
         setTimeout(() => { initialLoadDone.current = true; }, 1000);
       });
   }, []);
@@ -3891,12 +4092,9 @@ export default function FinanceApp() {
           <div className="mobile-header-row">
             <span className="mobile-logo">Ledger</span>
             <span className="mobile-page-label">{PAGE_LABELS[page]||""}</span>
-            <button className="mobile-theme-btn" onClick={()=>{
-              const keys=Object.keys(THEMES);
-              setThemeName(k=>keys[(keys.indexOf(k)+1)%keys.length]);
-            }}>
+            <button className="mobile-theme-btn" onClick={()=>setAppThemeMode(m=>m==="dark"?"light":"dark")}>
               <div style={{width:10,height:10,borderRadius:"50%",background:theme.accent}}/>
-              {themeName.split(" ")[0]}
+              {appThemeMode==="dark"?"☾":"☀"}
             </button>
           </div>
           {/* Account chips strip for Transactions page */}
@@ -3953,9 +4151,10 @@ export default function FinanceApp() {
               <button className="btn" style={{flex:1,fontSize:11,padding:"5px 0"}} onClick={()=>{
                 const payload = {
                   transactions, accounts, sources, rules, manualJEs,
-                  accountOrder, reportNames, reconciliations, customTheme,
-                  themeName, showCoaInactive, excludedTxns: [...excludedTxns],
-                  customReportTheme,
+                  accountOrder, reportNames, reconciliations,
+                  appThemeMode, customAppLightTheme, customAppDarkTheme,
+                  showCoaInactive, excludedTxns: [...excludedTxns],
+                  customLightTheme, customDarkTheme, reportThemeMode,
                 };
                 const blob = new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
                 const url = URL.createObjectURL(blob);
@@ -3979,11 +4178,14 @@ export default function FinanceApp() {
                       if(d.accountOrder)    setAccountOrder(d.accountOrder);
                       if(d.reportNames)     setReportNames(d.reportNames);
                       if(d.reconciliations) setReconciliations(d.reconciliations);
-                      if(d.customTheme)     setCustomTheme(d.customTheme);
-                      if(d.themeName)       setThemeName(d.themeName);
+                      if(d.appThemeMode)        setAppThemeMode(d.appThemeMode);
+                      if(d.customAppLightTheme) setCustomAppLightTheme(d.customAppLightTheme);
+                      if(d.customAppDarkTheme)  setCustomAppDarkTheme(d.customAppDarkTheme);
                       if(d.showCoaInactive!==undefined) setShowCoaInactive(d.showCoaInactive);
                       if(d.excludedTxns)    setExcludedTxns(new Set(d.excludedTxns));
-                      if(d.customReportTheme) setCustomReportTheme(d.customReportTheme);
+                      if(d.customLightTheme)  setCustomLightTheme(d.customLightTheme);
+                      if(d.customDarkTheme)   setCustomDarkTheme(d.customDarkTheme);
+                      if(d.reportThemeMode)   setReportThemeMode(d.reportThemeMode);
                       // Directly POST to server — bypass all save machinery
                       const payload = {
                         ...d,
@@ -4006,24 +4208,46 @@ export default function FinanceApp() {
           </div>
           <div className="theme-picker">
             <span className="theme-label">App Theme</span>
-            <select className="theme-select" value={themeName}
-              onChange={e=>{ setThemeName(e.target.value); setCustomTheme(null); }}>
-              {Object.keys(THEMES).map(t=><option key={t}>{t}</option>)}
-            </select>
-            <div style={{width:14,height:14,borderRadius:"50%",background:theme.accent,cursor:"pointer",flexShrink:0,border:"1px solid var(--border2)"}} title="Customise theme colours" onClick={()=>setShowThemeEditor(true)}/>
+            <div style={{display:"flex",gap:4,flex:1}}>
+              <button
+                className={"btn btn-sm " + (appThemeMode==="light" ? "btn-primary" : "btn-ghost")}
+                style={{flex:1,fontSize:11}}
+                onClick={()=>setAppThemeMode("light")}>
+                ☀ Light
+              </button>
+              <button
+                className={"btn btn-sm " + (appThemeMode==="dark" ? "btn-primary" : "btn-ghost")}
+                style={{flex:1,fontSize:11}}
+                onClick={()=>setAppThemeMode("dark")}>
+                ☾ Dark
+              </button>
+            </div>
           </div>
-          <div className="theme-picker" style={{marginTop:2}}>
-            <span className="theme-label" style={{fontSize:10}}>Default</span>
-            <select className="theme-select" style={{fontSize:11}} value={defaultThemeName}
-              onChange={e=>setDefaultThemeName(e.target.value)}>
-              {Object.keys(THEMES).map(t=><option key={t}>{t}</option>)}
-            </select>
+          <div style={{paddingLeft:20,marginTop:2}}>
+            <button className="btn btn-ghost" style={{fontSize:10,padding:"2px 8px",color:"var(--text3)"}} onClick={()=>setShowThemeEditor(true)}>
+              Customise {appThemeMode} theme…
+            </button>
           </div>
-          {themeOverrides[themeName] && <div style={{fontSize:10,color:"var(--text3)",paddingLeft:20,paddingBottom:2}}>✎ customised</div>}
           <div className="theme-picker" style={{marginTop:4}}>
             <span className="theme-label">Report Theme</span>
-            <button className="btn btn-ghost" style={{fontSize:11,padding:"3px 10px",flex:1}} onClick={()=>setShowReportThemeEditor(true)}>
-              Customise…
+            <div style={{display:"flex",gap:4,flex:1}}>
+              <button
+                className={"btn btn-sm " + (reportThemeMode==="light" ? "btn-primary" : "btn-ghost")}
+                style={{flex:1,fontSize:11}}
+                onClick={()=>setReportThemeMode("light")}>
+                ☀ Light
+              </button>
+              <button
+                className={"btn btn-sm " + (reportThemeMode==="dark" ? "btn-primary" : "btn-ghost")}
+                style={{flex:1,fontSize:11}}
+                onClick={()=>setReportThemeMode("dark")}>
+                ☾ Dark
+              </button>
+            </div>
+          </div>
+          <div style={{paddingLeft:20,marginTop:2}}>
+            <button className="btn btn-ghost" style={{fontSize:10,padding:"2px 8px",color:"var(--text3)"}} onClick={()=>setShowReportThemeEditor(true)}>
+              Customise {reportThemeMode} theme…
             </button>
           </div>
         </aside>
@@ -4157,15 +4381,53 @@ export default function FinanceApp() {
                   </div>
                 </div>
 
-                {/* Bank tabs — show if there are feed accounts OR imported sources */}
+                {/* Bank account cards */}
                 {tabList.length>0 && (
-                  <div className="bank-tabs mob-hide-on-mobile">
+                  <div className="bank-cards">
                     {tabList.map(s=>{
+                      const isActive = activeSrcId===s.id;
                       const unc = transactions.filter(t=>t.sourceId===s.id&&!t.accountId).length;
+                      const acct = acctById[s.id];
+                      // Check if this account has a Plaid connection
+                      const hasPlaid = plaidAccounts.some(p=>(p.mappedToId||p.mappedTo)===s.id);
+                      // Bank balance from Plaid (keyed by COA account id = mappedToId)
+                      const bal = bankBalances[s.id];
+                      const bankBal = bal != null ? Math.abs(bal.current ?? 0) : null;
+                      // In-register balance from transactions
+                      const inBooks = totals[s.id] !== undefined ? Math.abs(totals[s.id]||0) : 0;
+                      const inSync = bankBal !== null && Math.abs(bankBal - inBooks) < 0.05;
+                      const relTime = bal ? (()=>{
+                        const mins = Math.floor((Date.now()-new Date(bal.updatedAt))/60000);
+                        if (mins<1) return "Just now";
+                        if (mins<60) return `${mins}m ago`;
+                        return `${Math.floor(mins/60)}h ago`;
+                      })() : null;
                       return (
-                        <div key={s.id} className={`bank-tab${activeSrcId===s.id?" active":""}`} onClick={()=>setActiveSrcId(s.id)}>
-                          {s.name}
-                          {unc>0&&<span className="bank-tab-badge" style={{background:"rgba(251,191,36,.15)",color:"var(--amber)"}}>{unc}</span>}
+                        <div key={s.id} className={`bank-card${isActive?" active":""}`} onClick={()=>setActiveSrcId(s.id)}>
+                          <div className="bank-card-top">
+                            <div className="bank-card-name">{s.name}</div>
+                            <div className="bank-card-icons">
+                              <span className="bank-card-icon" title="Reconcile" onClick={e=>{e.stopPropagation();if(acct)setReconAccount(acct);}}>🏦</span>
+                              {isActive && <span className="bank-card-icon" title="Edit" onClick={e=>{e.stopPropagation();if(acct){setModalAccount(acct);setShowAcctModal(true);}}}>✎</span>}
+                            </div>
+                          </div>
+                          <div className="bank-card-section">
+                            <div className="bank-card-amount">{bankBal !== null ? fmt(bankBal) : "—"}</div>
+                            <div className="bank-card-label">Bank Balance</div>
+                            {relTime && <div className="bank-card-updated">Updated {relTime}</div>}
+                          </div>
+                          <div className="bank-card-divider"/>
+                          <div className="bank-card-section" style={{marginBottom:0}}>
+                            <div className="bank-card-amount">{fmt(inBooks)}</div>
+                            <div className="bank-card-label">In Register</div>
+                          </div>
+                          <div className="bank-card-footer" style={{marginTop:8}}>
+                            {unc>0
+                              ? <span className="bank-card-badge">{unc} to review</span>
+                              : <span className="bank-card-check">✓</span>
+                            }
+                            {hasPlaid && bankBal !== null && inSync && <span className="bank-card-check" style={{fontSize:11,marginLeft:4}}>✓ Synced</span>}
+                          </div>
                         </div>
                       );
                     })}
@@ -4290,14 +4552,22 @@ export default function FinanceApp() {
                         </span>
                       </div>
                       <div className="table-wrap">
-                        <table>
+                        <table style={{tableLayout:"fixed"}}>
+                          <colgroup>
+                            <col style={{width:28}}/>
+                            <col/>
+                            <col style={{width:130}}/>
+                            <col style={{width:130}}/>
+                            {isReconType && <col style={{width:160}}/>}
+                            <col style={{width:110}}/>
+                          </colgroup>
                           <thead>
                             <tr>
                               <th style={{width:28}}></th>
                               <th>Name</th>
-                              <th>Cash Flow</th>
-                              <th>Balance</th>
-                              {isReconType && <th>Last Reconciled</th>}
+                              <th style={{width:130}}>Cash Flow</th>
+                              <th style={{width:130}}>Balance</th>
+                              {isReconType && <th style={{width:160}}>Last Reconciled</th>}
                               <th style={{width:110}}>Actions</th>
                             </tr>
                           </thead>
@@ -4394,13 +4664,13 @@ export default function FinanceApp() {
                 </div>
 
                 {trendMode==="standard" ? (
-                  <div className="qb-report">
+                  <div className="qb-report" style={{"--report-col-w": reportColWidth+"px"}}>
                     <div className="qb-header">
                       <EditableField value={reportNames.company} className="qb-co" onChange={v=>setReportNames(p=>({...p,company:v}))}/>
                       <EditableField value={reportNames.pnl} className="qb-title" onChange={v=>setReportNames(p=>({...p,pnl:v}))}/>
                       <div className="qb-date">{dateLabel}</div>
                     </div>
-                    <div className="qb-col-heads"><div className="qb-col-head" style={{minWidth:reportColWidth,cursor:"col-resize",userSelect:"none"}} onMouseDown={e=>{e.preventDefault();const sx=e.clientX,sw=reportColWidth;const mm=e=>setReportColWidth(Math.max(80,sw+(e.clientX-sx)));const mu=()=>{document.removeEventListener("mousemove",mm);document.removeEventListener("mouseup",mu);};document.addEventListener("mousemove",mm);document.addEventListener("mouseup",mu);}}>Total ⟺</div></div>
+                    <div className="qb-col-heads"><div className="qb-col-head" style={{minWidth:reportColWidth,cursor:"col-resize",userSelect:"none"}} onMouseDown={e=>{e.preventDefault();const sx=e.clientX,sw=reportColWidth;const mm=e=>setReportColWidth(Math.max(60,Math.min(400,sw-(e.clientX-sx))));const mu=()=>{document.removeEventListener("mousemove",mm);document.removeEventListener("mouseup",mu);};document.addEventListener("mousemove",mm);document.addEventListener("mouseup",mu);}}>Total ⟺</div></div>
 
                     <div className="qb-section">Income</div>
                     {renderAccountTree(revenues, "", 0, "pos", "neg")}
@@ -4409,7 +4679,7 @@ export default function FinanceApp() {
                     )}
                     <div className="qb-subtotal l1">
                       <span className="qb-subtotal-label">Total Income</span>
-                      <span style={rColStyle} className={`qb-subtotal-val${totalRevenue>0?" pos":""}`}>{fmt(totalRevenue)}</span>
+                      <span className={`qb-subtotal-val${totalRevenue>0?" pos":""}`}>{fmt(totalRevenue)}</span>
                     </div>
 
                     <div className="qb-space"/>
@@ -4420,13 +4690,13 @@ export default function FinanceApp() {
                     )}
                     <div className="qb-subtotal l1">
                       <span className="qb-subtotal-label">Total Expenses</span>
-                      <span style={rColStyle} className={`qb-subtotal-val${totalExpenses>0?" neg":""}`}>{fmt(totalExpenses)}</span>
+                      <span className={`qb-subtotal-val${totalExpenses>0?" neg":""}`}>{fmt(totalExpenses)}</span>
                     </div>
 
                     <div className="qb-space"/>
                     <div className="qb-grand">
                       <span className="qb-grand-label">Net Income</span>
-                      <span style={rColStyle} className={`qb-grand-val${netIncome>=0?" pos":" neg"}`}>{fmt(netIncome)}</span>
+                      <span className={`qb-grand-val${netIncome>=0?" pos":" neg"}`}>{fmt(netIncome)}</span>
                     </div>
                   </div>
                 ) : (
@@ -4471,20 +4741,20 @@ export default function FinanceApp() {
                 </div>
 
                 {trendMode==="standard" ? (
-                  <div className="qb-report">
+                  <div className="qb-report" style={{"--report-col-w": reportColWidth+"px"}}>
                     <div className="qb-header">
                       <EditableField value={reportNames.company} className="qb-co" onChange={v=>setReportNames(p=>({...p,company:v}))}/>
                       <EditableField value={reportNames.balance} className="qb-title" onChange={v=>setReportNames(p=>({...p,balance:v}))}/>
                       <div className="qb-date">{endDate?`As of ${endDate}`:"All Periods"}</div>
                     </div>
-                    <div className="qb-col-heads"><div className="qb-col-head" style={{minWidth:reportColWidth,cursor:"col-resize",userSelect:"none"}} onMouseDown={e=>{e.preventDefault();const sx=e.clientX,sw=reportColWidth;const mm=e=>setReportColWidth(Math.max(80,sw+(e.clientX-sx)));const mu=()=>{document.removeEventListener("mousemove",mm);document.removeEventListener("mouseup",mu);};document.addEventListener("mousemove",mm);document.addEventListener("mouseup",mu);}}>Total ⟺</div></div>
+                    <div className="qb-col-heads"><div className="qb-col-head" style={{minWidth:reportColWidth,cursor:"col-resize",userSelect:"none"}} onMouseDown={e=>{e.preventDefault();const sx=e.clientX,sw=reportColWidth;const mm=e=>setReportColWidth(Math.max(60,Math.min(400,sw-(e.clientX-sx))));const mu=()=>{document.removeEventListener("mousemove",mm);document.removeEventListener("mouseup",mu);};document.addEventListener("mousemove",mm);document.addEventListener("mouseup",mu);}}>Total ⟺</div></div>
 
                     {/* ASSETS */}
                     <div className="qb-section">Assets</div>
                     {renderAccountTree(assets, "", 0, "pos", "neg")}
                     <div className="qb-subtotal">
                       <span className="qb-subtotal-label" style={{fontWeight:700,textTransform:"uppercase",fontSize:12}}>Total Assets</span>
-                      <span style={rColStyle} className={`qb-subtotal-val${totalAssets>0?" pos":""}`}>{fmt(totalAssets)}</span>
+                      <span className={`qb-subtotal-val${totalAssets>0?" pos":""}`}>{fmt(totalAssets)}</span>
                     </div>
 
                     <div className="qb-space"/><div className="qb-space"/>
@@ -4495,7 +4765,7 @@ export default function FinanceApp() {
                     {renderAccountTree(liabilities, "", 0, "neg", "pos")}
                     <div className="qb-subtotal l1">
                       <span className="qb-subtotal-label">Total Liabilities</span>
-                      <span style={rColStyle} className={`qb-subtotal-val${totalLiabilities>0?" neg":""}`}>{fmt(totalLiabilities)}</span>
+                      <span className={`qb-subtotal-val${totalLiabilities>0?" neg":""}`}>{fmt(totalLiabilities)}</span>
                     </div>
 
                     <div className="qb-space"/>
@@ -4530,7 +4800,7 @@ export default function FinanceApp() {
                 <div className="page-title">{reportNames.cashflow}</div>
                 <div className="page-sub">Cash movements organized by activity type.</div>
                 <DateRangeBar startDate={startDate} endDate={endDate} onChange={(s,e)=>{setStartDate(s);setEndDate(e);}}/>
-                <div className="qb-report">
+                <div className="qb-report" style={{"--report-col-w": reportColWidth+"px"}}>
                   <div className="qb-header">
                     <EditableField value={reportNames.company} className="qb-co" onChange={v=>setReportNames(p=>({...p,company:v}))}/>
                     <EditableField value={reportNames.cashflow} className="qb-title" onChange={v=>setReportNames(p=>({...p,cashflow:v}))}/>
@@ -4554,7 +4824,7 @@ export default function FinanceApp() {
                         }
                         <div className="qb-subtotal l1">
                           <span className="qb-subtotal-label">Net Cash — {sec.name} Activities</span>
-                          <span style={rColStyle} className={`qb-subtotal-val${total>=0?" pos":" neg"}`}>{fmt(total)}</span>
+                          <span className={`qb-subtotal-val${total>=0?" pos":" neg"}`}>{fmt(total)}</span>
                         </div>
                         <div className="qb-space"/>
                       </React.Fragment>
@@ -4565,7 +4835,7 @@ export default function FinanceApp() {
                     return (
                       <div className="qb-grand">
                         <span className="qb-grand-label">Net Change in Cash</span>
-                        <span style={rColStyle} className={`qb-grand-val${nc>=0?" pos":" neg"}`}>{fmt(nc)}</span>
+                        <span className={`qb-grand-val${nc>=0?" pos":" neg"}`}>{fmt(nc)}</span>
                       </div>
                     );
                   })()}
@@ -4610,23 +4880,27 @@ export default function FinanceApp() {
       {showRuleModal    && <RuleModal    rule={modalRule}        accounts={activeAccounts}   onSave={saveRule}    onClose={()=>{setShowRuleModal(false);setModalRule(null);}}/>}
       {reconAccount     && <ReconcileModal account={reconAccount} transactions={transactions}
         manualJEs={manualJEs} accounts={accounts}
+        reconHistory={reconHistory}
+        onUndo={undoReconciliation}
         onUpdate={(id,fields)=>setTransactions(prev=>prev.map(t=>t.id===id?{...t,...fields}:t))}
         onComplete={completeReconciliation} onClose={()=>setReconAccount(null)}/>}
-      {showThemeEditor  && <CustomThemeModal currentTheme={theme}
+      {showThemeEditor && <CustomThemeModal
+        currentTheme={appThemeMode==="light" ? {...LIGHT_APP_THEME,...(customAppLightTheme||{})} : {...DARK_APP_THEME,...(customAppDarkTheme||{})}}
+        mode={appThemeMode}
         onSave={t=>{
-          if(t){
-            // Save as override for current theme name
-            setThemeOverrides(prev=>({...prev,[themeName]:t}));
-            setCustomTheme(null);
-          } else {
-            // Reset overrides for this theme
-            setThemeOverrides(prev=>{ const n={...prev}; delete n[themeName]; return n; });
-            setCustomTheme(null);
-          }
+          if (appThemeMode==="light") setCustomAppLightTheme(t || {...LIGHT_APP_THEME});
+          else setCustomAppDarkTheme(t || {...DARK_APP_THEME});
+          setTimeout(save, 100);
         }}
         onClose={()=>setShowThemeEditor(false)}/>}
-      {showReportThemeEditor && <ReportThemeModal currentTheme={customReportTheme}
-        onSave={t=>{ setCustomReportTheme(t || {...DEFAULT_REPORT_THEME}); }}
+      {showReportThemeEditor && <ReportThemeModal
+        currentTheme={reportThemeMode==="dark" ? {...DARK_REPORT_THEME,...(customDarkTheme||{})} : {...DEFAULT_REPORT_THEME,...(customLightTheme||{})}}
+        mode={reportThemeMode}
+        onSave={t=>{
+          if (reportThemeMode==="dark") setCustomDarkTheme(t || {...DARK_REPORT_THEME});
+          else setCustomLightTheme(t || {...DEFAULT_REPORT_THEME});
+          setTimeout(save, 100);
+        }}
         onClose={()=>setShowReportThemeEditor(false)}/>}
       {splitTxn && <SplitModal transaction={splitTxn} accounts={activeAccounts}
         onSave={saveSplit} onClose={()=>setSplitTxn(null)}/>}
