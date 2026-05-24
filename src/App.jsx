@@ -431,7 +431,7 @@ const styles = `
 
   /* Resizable no-wrap transaction table */
   .txn-table-wrap{overflow-x:auto;border-radius:var(--radius-lg);border:1px solid var(--border);width:100%;}
-  .txn-table{width:100%;border-collapse:collapse;table-layout:fixed;}
+  .txn-table{width:100%;border-collapse:collapse;table-layout:auto;}
   .txn-table th{background:var(--surface2);color:var(--text3);font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:10px 10px;text-align:left;font-family:'DM Mono',monospace;font-weight:400;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;position:relative;user-select:none;}
   .txn-table td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;}
   .txn-table tr:last-child td{border-bottom:none;}
@@ -2062,17 +2062,23 @@ function ImportModal({ accounts, onImport, onClose }) {
 // RESIZABLE COLUMN HEADER
 // ─────────────────────────────────────────────────────────────────────────────
 function ResizeTh({ width, onResize, children, style={} }) {
+  const thRef = useRef(null);
   const startX=useRef(null), startW=useRef(null);
   const onMouseDown = e => {
     e.preventDefault();
-    startX.current=e.clientX; startW.current=width;
+    startX.current=e.clientX;
+    // use actual rendered width if no fixed width set
+    startW.current = width ?? thRef.current?.offsetWidth ?? 200;
     const move=ev=>onResize(Math.max(40,startW.current+(ev.clientX-startX.current)));
     const up=()=>{document.removeEventListener("mousemove",move);document.removeEventListener("mouseup",up);};
     document.addEventListener("mousemove",move);
     document.addEventListener("mouseup",up);
   };
+  const fixedStyle = width != null
+    ? {width, minWidth:width, maxWidth:width, overflow:"hidden"}
+    : {minWidth:150, overflow:"hidden"};
   return (
-    <th style={{...style,width,minWidth:width,maxWidth:width,position:"relative",overflow:"hidden",whiteSpace:"nowrap"}}>
+    <th ref={thRef} style={{...fixedStyle,...style,position:"relative",whiteSpace:"nowrap"}}>
       {children}
       <span className="col-resize" onMouseDown={onMouseDown}/>
     </th>
@@ -2336,7 +2342,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                 <colgroup>
                   <col style={{width:34}}/>
                   <col style={{width:colWidths.date}}/>
-                  <col style={{width:colWidths.desc}}/>
+                  <col/>
                   {showJournal&&section==="categorized"?<>
                     <col style={{width:colWidths.amt}}/><col style={{width:colWidths.amt}}/><col style={{width:colWidths.cat}}/><col style={{width:colWidths.transfer}}/><col style={{width:colWidths.del}}/>
                   </>:<>
@@ -2348,7 +2354,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                   <ResizeTh width={colWidths.date} onResize={w=>setCW("date",w)}>
                     <span className="sort-th" onClick={()=>cycleSort("date")}>Date<span className={`sort-arrow${sortKey==="date"?" active":""}`}>{sortKey==="date"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
                   </ResizeTh>
-                  <ResizeTh width={colWidths.desc} onResize={w=>setCW("desc",w)}>
+                  <ResizeTh width={undefined} onResize={w=>setCW("desc",w)} style={{width:"auto",minWidth:150}}>
                     <span className="sort-th" onClick={()=>cycleSort("desc")}>Description<span className={`sort-arrow${sortKey==="desc"?" active":""}`}>{sortKey==="desc"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
                   </ResizeTh>
                   {showJournal&&section==="categorized"
@@ -2380,7 +2386,8 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                       >
                         <td style={{paddingLeft:14}} onClick={e=>e.stopPropagation()}>
                           <input type="checkbox" className="cb" checked={selected.has(t.id)}
-                            onChange={e=>toggleOneShift(t.id, rowIdx, e)}/>
+                            onChange={()=>{}}
+                            onClick={e=>toggleOneShift(t.id, rowIdx, e)}/>
                         </td>
                         <td className="font-mono" style={{color:"var(--text3)",fontSize:12,whiteSpace:"nowrap"}}>
                           {t.date}
