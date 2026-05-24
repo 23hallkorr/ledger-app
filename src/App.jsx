@@ -3317,9 +3317,16 @@ export default function FinanceApp() {
   const initialLoadDone = useRef(false);
 
   const save = useCallback(() => {
-    if (!initialLoadDone.current) return;
+    if (!initialLoadDone.current) {
+      console.log("[save] blocked — still loading");
+      return;
+    }
     const p = stateRef.current;
-    if (!p.accounts?.length && !p.transactions?.length) return;
+    if (!p.accounts?.length && !p.transactions?.length) {
+      console.log("[save] blocked — empty payload");
+      return;
+    }
+    console.log("[save] SAVING — txns:", p.transactions?.length, "accounts:", p.accounts?.length, new Error().stack.split('\n')[2]);
     pendingSaveRef.current = p;
     scheduleSave();
   }, [scheduleSave]);
