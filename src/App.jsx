@@ -3252,7 +3252,6 @@ export default function FinanceApp() {
   const [customTheme,     setCustomTheme]     = useState(null);
   const [showThemeEditor, setShowThemeEditor] = useState(false);
   const [customReportTheme,     setCustomReportTheme]     = useState({...DEFAULT_REPORT_THEME});
-  const [dataLoaded,            setDataLoaded]            = useState(false);
   const [splitTxn,        setSplitTxn]        = useState(null);
   const [globalSearch,    setGlobalSearch]    = useState("");
   const [showSearch,      setShowSearch]      = useState(false);
@@ -3282,7 +3281,22 @@ export default function FinanceApp() {
   const [showRuleModal,   setShowRuleModal]   = useState(false);
   const [modalRule,       setModalRule]       = useState(null);
 
-  // ── Import ────────────────────────────────────────────────────────────────
+  // Build the full payload from current state (using refs to avoid stale closures)
+  const stateRef = useRef({});
+  useEffect(() => {
+    stateRef.current = {
+      transactions, accounts, sources, rules, manualJEs,
+      accountOrder, reportNames, reconciliations, reconHistory, customTheme,
+      themeName, showCoaInactive, excludedTxns: [...excludedTxns],
+      customReportTheme, themeOverrides, defaultThemeName,
+    };
+  });
+
+  const save = useCallback(() => {
+    const p = stateRef.current;
+    if (!p.accounts?.length && !p.transactions?.length) return;
+    saveToServer(p);
+  }, [saveToServer]);
   // sourceId = chart-of-accounts account id (e.g. "1001")
   // sourceName = display name for the tab
   const handleImport = useCallback((csvText, sourceId, sourceName) => {
@@ -3291,7 +3305,6 @@ export default function FinanceApp() {
       const matched = applyRules(t, rules);
       return matched ? {...t, accountId: matched} : t;
     });
-    // Add/update the sources list (keyed by account id)
     setSources(prev => {
       const exists = prev.find(s => s.id === sourceId);
       if (exists) {
@@ -3309,26 +3322,29 @@ export default function FinanceApp() {
     });
     setActiveSrcId(sourceId);
     setPage("classify");
-  }, [rules]);
+    setTimeout(save, 200);
+  }, [rules, save]);
 
   // ── Classify ──────────────────────────────────────────────────────────────
   const classify = useCallback((txnId, accountId) => {
     setTransactions(prev => prev.map(t => t.id===txnId ? {...t, accountId: accountId||null, splits: null} : t));
-  }, []);
+    setTimeout(save, 100);
+  }, [save]);
 
   const saveSplit = useCallback((txnId, splits) => {
-    // Primary accountId = first split's account; splits array stored for display & accounting
     setTransactions(prev => prev.map(t =>
       t.id===txnId ? {...t, accountId: splits[0].accountId, splits} : t
     ));
-  }, []);
+    setTimeout(save, 100);
+  }, [save]);
 
   const applyAllRules = useCallback(() => {
     setTransactions(prev => prev.map(t => {
       const m = applyRules(t, rules);
       return m ? {...t, accountId:m} : t;
     }));
-  }, [rules]);
+    setTimeout(save, 100);
+  }, [rules, save]);
 
   // ── Plaid ─────────────────────────────────────────────────────────────────
   // Load connected Plaid accounts on startup
@@ -3458,7 +3474,8 @@ export default function FinanceApp() {
         return t;
       });
     });
-  }, []);
+    setTimeout(save, 100);
+  }, [save]);
 
   // ── Accounts ──────────────────────────────────────────────────────────────
   const saveAccount = acct => {
@@ -3467,8 +3484,9 @@ export default function FinanceApp() {
       return e ? prev.map(a=>a.id===acct.id?acct:a) : [...prev,acct];
     });
     setShowAcctModal(false); setModalAccount(null);
+    setTimeout(save, 100);
   };
-  const toggleAccountInactive = id => setAccounts(prev=>prev.map(a=>a.id===id?{...a,inactive:!a.inactive}:a));
+  const toggleAccountInactive = id => { setAccounts(prev=>prev.map(a=>a.id===id?{...a,inactive:!a.inactive}:a)); setTimeout(save,100); };
 
   const completeReconciliation = useCallback((acctId,date,balance,clearedIds)=>{
     const histEntry = {
@@ -3480,26 +3498,28 @@ export default function FinanceApp() {
     setReconciliations(prev=>({...prev,[acctId]:{lastDate:date,lastBalance:balance}}));
     setTransactions(prev=>prev.map(t=>clearedIds.includes(t.id)?{...t,reconciled:true}:t));
     setReconAccount(null);
-  },[]);
+    setTimeout(save, 100);
+  },[save]);
 
   const undoReconciliation = useCallback((histId)=>{
     const entry = reconHistory.find(h=>h.id===histId);
     if (!entry) return;
     setTransactions(prev=>prev.map(t=>entry.clearedIds.includes(t.id)?{...t,reconciled:false}:t));
     setReconHistory(prev=>prev.filter(h=>h.id!==histId));
-    // Restore previous recon state for this account
     setReconciliations(prev=>{
       const remaining = reconHistory.filter(h=>h.id!==histId&&h.acctId===entry.acctId);
       if (!remaining.length) { const n={...prev}; delete n[entry.acctId]; return n; }
       const latest = remaining[0];
       return {...prev,[entry.acctId]:{lastDate:latest.date,lastBalance:latest.balance}};
     });
-  },[reconHistory]);
+    setTimeout(save, 100);
+  },[reconHistory, save]);
 
   // ── Rules ─────────────────────────────────────────────────────────────────
   const saveRule = rule => {
     setRules(prev=>{ const e=prev.find(r=>r.id===rule.id); return e?prev.map(r=>r.id===rule.id?rule:r):[...prev,rule]; });
     setShowRuleModal(false); setModalRule(null);
+    setTimeout(save, 100);
   };
 
   const postJournalEntry = useCallback((je) => {
@@ -3507,7 +3527,8 @@ export default function FinanceApp() {
       const exists = prev.find(e=>e.id===je.id);
       return exists ? prev.map(e=>e.id===je.id?je:e) : [...prev, je];
     });
-  }, []);
+    setTimeout(save, 100);
+  }, [save]);
 
   const orderedAccounts = useMemo(()=>{
     if (!accountOrder) return accounts;
@@ -3519,16 +3540,17 @@ export default function FinanceApp() {
 
   const activeAccounts = useMemo(()=>accounts.filter(a=>!a.inactive),[accounts]);
 
-  const excludeTxn  = useCallback((id)=>setExcludedTxns(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n;}),[]);
-  const deleteTxn   = useCallback((id)=>setTransactions(prev=>prev.filter(t=>t.id!==id)),[]);
+  const excludeTxn  = useCallback((id)=>{ setExcludedTxns(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n;}); setTimeout(save,100); },[save]);
+  const deleteTxn   = useCallback((id)=>{ setTransactions(prev=>prev.filter(t=>t.id!==id)); setTimeout(save,100); },[save]);
 
   const handlePreCatImport = useCallback((rows) => {
     setTransactions(prev => {
       const ids = new Set(prev.map(t=>t.id));
       return [...prev, ...rows.filter(r=>!ids.has(r.id))];
     });
-  }, []);
-  const updateTxn   = useCallback((id,changes)=>setTransactions(prev=>prev.map(t=>t.id===id?{...t,...changes}:t)),[]);
+    setTimeout(save, 100);
+  }, [save]);
+  const updateTxn = useCallback((id,changes)=>{ setTransactions(prev=>prev.map(t=>t.id===id?{...t,...changes}:t)); setTimeout(save,100); },[save]);
 
   // ── Computed ──────────────────────────────────────────────────────────────
   const acctById = useMemo(()=>Object.fromEntries(accounts.map(a=>[a.id,a])),[accounts]);
@@ -3740,63 +3762,66 @@ export default function FinanceApp() {
   };
 
   // ── Load from server on startup, fall back to localStorage ──────────────
-  const loadingRef = useRef(true); // true = currently loading, block saves
   useEffect(() => {
-    const applyData = (d) => {
-      // Only apply arrays if they have content — never overwrite good data with empty arrays
-      if (d.transactions?.length)  setTransactions(d.transactions);
-      if (d.accounts?.length)      setAccounts(d.accounts.map(a=>({
-        ...a,
-        parentId: (!a.parentId || a.parentId === "null" || a.parentId === "undefined") ? "" : a.parentId,
-      })));
-      if (d.sources?.length)       setSources(d.sources);
-      if (d.rules?.length)         setRules(d.rules);
-      if (d.manualJEs?.length)     setManualJEs(d.manualJEs);
-      if (d.accountOrder)          setAccountOrder(d.accountOrder);
-      if (d.reportNames)           setReportNames(d.reportNames);
-      if (d.reconciliations && Object.keys(d.reconciliations).length) setReconciliations(d.reconciliations);
-      if (d.reconHistory?.length)     setReconHistory(d.reconHistory);
-      if (d.customTheme)           setCustomTheme(d.customTheme);
-      if (d.themeName)             setThemeName(d.themeName);
-      if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
-      if (d.excludedTxns?.length)  setExcludedTxns(new Set(d.excludedTxns));
-      if (d.customReportTheme)     setCustomReportTheme(d.customReportTheme);
-      if (d.themeOverrides)        setThemeOverrides(d.themeOverrides);
-      if (d.defaultThemeName)      setDefaultThemeName(d.defaultThemeName);
-      // Wait 500ms after all setStates before allowing saves
-      setTimeout(() => {
-        loadingRef.current = false;
-        setDataLoaded(true);
-      }, 500);
-    };
     fetch(`${API}/api/data`)
       .then(r => r.json())
-      .then(d => applyData(d))
+      .then(d => {
+        // Apply everything in one batch using a functional update trick —
+        // we use React.unstable_batchedUpdates if available, otherwise just apply all
+        const apply = () => {
+          if (d.transactions?.length)  setTransactions(d.transactions);
+          if (d.accounts?.length)      setAccounts(d.accounts.map(a=>({
+            ...a,
+            parentId: (!a.parentId || a.parentId === "null" || a.parentId === "undefined") ? "" : a.parentId,
+          })));
+          if (d.sources?.length)       setSources(d.sources);
+          if (d.rules?.length)         setRules(d.rules);
+          if (d.manualJEs?.length)     setManualJEs(d.manualJEs);
+          if (d.accountOrder)          setAccountOrder(d.accountOrder);
+          if (d.reportNames)           setReportNames(d.reportNames);
+          if (d.reconciliations && Object.keys(d.reconciliations).length) setReconciliations(d.reconciliations);
+          if (d.reconHistory?.length)  setReconHistory(d.reconHistory);
+          if (d.customTheme)           setCustomTheme(d.customTheme);
+          if (d.themeName)             setThemeName(d.themeName);
+          if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
+          if (d.excludedTxns?.length)  setExcludedTxns(new Set(d.excludedTxns));
+          if (d.customReportTheme)     setCustomReportTheme(d.customReportTheme);
+          if (d.themeOverrides)        setThemeOverrides(d.themeOverrides);
+          if (d.defaultThemeName)      setDefaultThemeName(d.defaultThemeName);
+        };
+        apply();
+      })
       .catch(() => {
         try {
           const saved = localStorage.getItem("ledger_data");
-          if (saved) applyData(JSON.parse(saved));
-          else { loadingRef.current = false; setDataLoaded(true); }
-        } catch(e) {
-          loadingRef.current = false;
-          setDataLoaded(true);
-          console.warn("Could not load saved data:", e);
-        }
+          if (!saved) return;
+          const d = JSON.parse(saved);
+          if (d.transactions?.length)  setTransactions(d.transactions);
+          if (d.accounts?.length)      setAccounts(d.accounts.map(a=>({...a, parentId: (!a.parentId||a.parentId==="null"||a.parentId==="undefined")?"":a.parentId})));
+          if (d.sources?.length)       setSources(d.sources);
+          if (d.rules?.length)         setRules(d.rules);
+          if (d.manualJEs?.length)     setManualJEs(d.manualJEs);
+          if (d.accountOrder)          setAccountOrder(d.accountOrder);
+          if (d.reportNames)           setReportNames(d.reportNames);
+          if (d.reconciliations && Object.keys(d.reconciliations).length) setReconciliations(d.reconciliations);
+          if (d.reconHistory?.length)  setReconHistory(d.reconHistory);
+          if (d.customTheme)           setCustomTheme(d.customTheme);
+          if (d.themeName)             setThemeName(d.themeName);
+          if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
+          if (d.excludedTxns?.length)  setExcludedTxns(new Set(d.excludedTxns));
+          if (d.customReportTheme)     setCustomReportTheme(d.customReportTheme);
+          if (d.themeOverrides)        setThemeOverrides(d.themeOverrides);
+          if (d.defaultThemeName)      setDefaultThemeName(d.defaultThemeName);
+        } catch(e) { console.warn("Could not load saved data:", e); }
       });
   }, []);
 
-  // ── Save to server (debounced 2s) ─────────────────────────────────────────
-  useEffect(() => {
-    if (!dataLoaded) return;
-    if (loadingRef.current) return; // still loading, don't save
-    if (!accounts.length && !transactions.length) return;
-    const payload = {
-      transactions, accounts, sources, rules, manualJEs,
-      accountOrder, reportNames, reconciliations, reconHistory, customTheme,
-      themeName, showCoaInactive, excludedTxns: [...excludedTxns],
-      customReportTheme, themeOverrides, defaultThemeName,
-    };
-    const tid = setTimeout(() => {
+  // ── Explicit save function — called only when user makes a change ─────────
+  const saveTimerRef = useRef(null);
+  const saveToServer = useCallback((payload) => {
+    if (!payload.accounts?.length && !payload.transactions?.length) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
       fetch(`${API}/api/data`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3806,11 +3831,8 @@ export default function FinanceApp() {
         try { localStorage.setItem("ledger_data", JSON.stringify(payload)); } catch(e) {}
       })
       .catch(e => console.warn("Could not save to server:", e));
-    }, 2000);
-    return () => clearTimeout(tid);
-  }, [dataLoaded, transactions, accounts, sources, rules, manualJEs, accountOrder,
-      reportNames, reconciliations, reconHistory, customTheme, themeName, showCoaInactive,
-      excludedTxns, customReportTheme, themeOverrides, defaultThemeName]);
+    }, 1500);
+  }, []);
   // Close search on outside click
   useEffect(()=>{
     if (!showSearch) return;
