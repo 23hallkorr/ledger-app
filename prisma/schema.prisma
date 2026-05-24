@@ -63,3 +63,16 @@ model Setting {
   key   String @id
   value Json?
 }
+
+model PlaidAccount {
+  id             String @id @default(cuid())
+  plaidAccountId String @unique
+  accessToken    String
+  itemId         String
+  name           String
+  mask           String
+  type           String
+  subtype        String
+  cursor         String @default("")
+  createdAt      DateTime @default(now())
+}

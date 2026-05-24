@@ -3184,8 +3184,11 @@ export default function FinanceApp() {
   const [showRulesPanel,  setShowRulesPanel]  = useState(false);
   const [themeOverrides,  setThemeOverrides]  = useState({});
   const [defaultThemeName,setDefaultThemeName]= useState("Obsidian");
-  const [coaDrillAccount, setCoaDrillAccount] = useState(null); // for COA drill report
-  const [trendDrillPeriod,setTrendDrillPeriod]= useState(null); // {period, key} for column drill
+  const [coaDrillAccount, setCoaDrillAccount] = useState(null);
+  const [trendDrillPeriod,setTrendDrillPeriod]= useState(null);
+  const [plaidAccounts,   setPlaidAccounts]   = useState([]);
+  const [plaidSyncing,    setPlaidSyncing]    = useState(false);
+  const [showPlaidModal,  setShowPlaidModal]  = useState(false);
   const [reportNames,    setReportNames]   = useState({
     company: "My Company",
     pnl:     "Income Statement",
@@ -3248,6 +3251,110 @@ export default function FinanceApp() {
       return m ? {...t, accountId:m} : t;
     }));
   }, [rules]);
+
+  // ── Plaid ─────────────────────────────────────────────────────────────────
+  // Load connected Plaid accounts on startup
+  useEffect(()=>{
+    fetch(`${API}/api/plaid/accounts`)
+      .then(r=>r.json())
+      .then(d=>{ if(d.accounts) setPlaidAccounts(d.accounts); })
+      .catch(()=>{});
+  },[]);
+
+  const connectBank = async () => {
+    try {
+      // 1. Get a link token from our server
+      const ltRes = await fetch(`${API}/api/plaid/link-token`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ redirectUri: window.location.origin }),
+      });
+      const { link_token, error } = await ltRes.json();
+      if (error) { alert("Plaid error: " + error); return; }
+
+      // 2. Load Plaid Link script dynamically
+      if (!window.Plaid) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
+          s.onload = resolve; s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+
+      // 3. Open Plaid Link
+      const handler = window.Plaid.create({
+        token: link_token,
+        onSuccess: async (public_token, metadata) => {
+          // 4. Exchange for access token
+          const exRes = await fetch(`${API}/api/plaid/exchange-token`, {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({ public_token }),
+          });
+          const exData = await exRes.json();
+          if (!exData.ok) { alert("Error connecting bank: " + exData.error); return; }
+
+          // 5. Add connected accounts to our sources list
+          for (const pa of exData.accounts) {
+            setSources(prev => {
+              if (prev.find(s=>s.id===pa.plaidAccountId)) return prev;
+              return [...prev, { id: pa.plaidAccountId, name: pa.name + (pa.mask ? ` ••${pa.mask}` : "") }];
+            });
+          }
+          setPlaidAccounts(prev => {
+            const ids = new Set(prev.map(a=>a.plaidAccountId));
+            return [...prev, ...exData.accounts.filter(a=>!ids.has(a.plaidAccountId))];
+          });
+
+          // 6. Immediately sync transactions
+          await syncPlaidAccount(exData.accounts[0].plaidAccountId);
+          alert("Bank connected! Transactions imported.");
+        },
+        onExit: (err) => { if (err) console.error("Plaid exit:", err); },
+      });
+      handler.open();
+    } catch (e) {
+      alert("Could not connect bank: " + e.message);
+    }
+  };
+
+  const syncPlaidAccount = async (plaidAccountId) => {
+    setPlaidSyncing(true);
+    try {
+      const res = await fetch(`${API}/api/plaid/sync`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ plaidAccountId }),
+      });
+      const data = await res.json();
+      if (!data.ok) { alert("Sync error: " + data.error); return; }
+      if (data.added?.length) {
+        const withRules = data.added.map(t => {
+          const matched = applyRules(t, rules);
+          return matched ? {...t, accountId: matched} : t;
+        });
+        setTransactions(prev => {
+          const ids = new Set(prev.map(t=>t.id));
+          return [...prev, ...withRules.filter(t=>!ids.has(t.id))];
+        });
+        setActiveSrcId(plaidAccountId);
+        setPage("classify");
+      }
+      return data.added?.length || 0;
+    } catch(e) {
+      alert("Sync failed: " + e.message);
+    } finally {
+      setPlaidSyncing(false);
+    }
+  };
+
+  const syncAllPlaid = async () => {
+    let total = 0;
+    for (const pa of plaidAccounts) {
+      const count = await syncPlaidAccount(pa.plaidAccountId);
+      total += count || 0;
+    }
+    if (total === 0) alert("No new transactions found.");
+    else alert(`Imported ${total} new transaction${total!==1?"s":""}.`);
+  };
 
   // ── Transfer matching ─────────────────────────────────────────────────────
   const matchTransfer = useCallback((anchorId, counterpartId) => {
@@ -3906,7 +4013,16 @@ export default function FinanceApp() {
                   <div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap"}}>
                     <button className="btn btn-ghost btn-sm" onClick={()=>setShowRulesPanel(true)}>⚡ Rules</button>
                     <button className="btn btn-ghost btn-sm" onClick={()=>setShowPreCatModal(true)}>+ Import Pre-Cat</button>
-                    <button className="btn btn-primary btn-sm" onClick={()=>setShowImportModal(true)}>+ Import CSV</button>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setShowImportModal(true)}>+ Import CSV</button>
+                    {plaidAccounts.length > 0 && (
+                      <button className="btn btn-ghost btn-sm" onClick={syncAllPlaid} disabled={plaidSyncing}
+                        style={{color:"var(--green)"}}>
+                        {plaidSyncing ? "Syncing…" : "↻ Sync Banks"}
+                      </button>
+                    )}
+                    <button className="btn btn-primary btn-sm" onClick={connectBank}>
+                      🏦 Connect Bank
+                    </button>
                   </div>
                 </div>
 
