@@ -2438,30 +2438,34 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                               <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:"var(--purple)"}}>
                                 {entry && isCreditOnSrc ? fmt(entry.absAmount) : ""}
                               </td>
-                              <td style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();if(!isEditing)setEditingId(t.id);}}>
-                                {isEditing
-                                  ? <InlineEditor
-                                      txnId={t.id}
-                                      currentValue={t.accountId}
-                                      accounts={accounts}
-                                      onAccept={id=>{ stageClassify(t.id,id); }}
-                                      onCancel={()=>setEditingId(null)}
-                                      onEnterNext={()=>advanceToNext(t.id)}
-                                      hideAcceptButton={true}
-                                    />
-                                  : pendingQueue[t.id]
-                                    ? (()=>{ const pa=accounts.find(a=>a.id===pendingQueue[t.id]); return (
-                                        <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                          {pa&&<span className={`badge badge-${pa.type.toLowerCase()}`} style={{fontSize:10}}>{pa.type}</span>}
-                                          <span style={{fontSize:12,color:"var(--text2)"}}>{pa?.name}</span>
-                                          <span style={{fontSize:10,color:"var(--amber)",marginLeft:2}}>● pending</span>
-                                        </div>); })()
-                                  : <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                      {catAcct && <span className={`badge badge-${catAcct.type.toLowerCase()}`} style={{fontSize:10}}>{catAcct.type}</span>}
-                                      <span style={{fontSize:12,color:"var(--text2)"}}>{catAcct?.name || (t.isJE?<span style={{color:"var(--purple)"}}>Journal Entry</span>:<span style={{color:"var(--text3)"}}>—</span>)}</span>
-                                      {t.isJE && <span style={{fontSize:10,color:"var(--purple)",marginLeft:2}}>JE</span>}
-                                      {!t.isJE && <span style={{fontSize:10,color:"var(--text3)"}}>✎</span>}
+                              <td style={{cursor:t.isJE?"default":"pointer"}} onClick={e=>{e.stopPropagation();if(!t.isJE&&!isEditing)setEditingId(t.id);}}>
+                                {t.isJE
+                                  ? <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                      <span style={{fontSize:10,background:"rgba(167,139,250,.15)",color:"var(--purple)",padding:"1px 5px",borderRadius:4,fontFamily:"DM Mono,monospace"}}>JE</span>
+                                      <span style={{fontSize:12,color:"var(--text3)"}}>Journal Entry</span>
                                     </div>
+                                  : isEditing
+                                    ? <InlineEditor
+                                        txnId={t.id}
+                                        currentValue={t.accountId}
+                                        accounts={accounts}
+                                        onAccept={id=>{ stageClassify(t.id,id); }}
+                                        onCancel={()=>setEditingId(null)}
+                                        onEnterNext={()=>advanceToNext(t.id)}
+                                        hideAcceptButton={true}
+                                      />
+                                    : pendingQueue[t.id]
+                                      ? (()=>{ const pa=accounts.find(a=>a.id===pendingQueue[t.id]); return (
+                                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                            {pa&&<span className={`badge badge-${pa.type.toLowerCase()}`} style={{fontSize:10}}>{pa.type}</span>}
+                                            <span style={{fontSize:12,color:"var(--text2)"}}>{pa?.name}</span>
+                                            <span style={{fontSize:10,color:"var(--amber)",marginLeft:2}}>● pending</span>
+                                          </div>); })()
+                                      : <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                          {catAcct && <span className={`badge badge-${catAcct.type.toLowerCase()}`} style={{fontSize:10}}>{catAcct.type}</span>}
+                                          <span style={{fontSize:12,color:"var(--text2)"}}>{catAcct?.name || <span style={{color:"var(--text3)"}}>—</span>}</span>
+                                          <span style={{fontSize:10,color:"var(--text3)"}}>✎</span>
+                                        </div>
                                 }
                               </td>
                               <td onClick={e=>e.stopPropagation()}>
@@ -2477,36 +2481,41 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                             </>
                           : <>
                               <td><span className={`amount ${t.amount>=0?"pos":"neg"}`}>{fmt(t.amount)}</span></td>
-                              <td style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();if(!isEditing)setEditingId(t.id);}}>
-                                {isEditing
-                                  ? <InlineEditor
-                                      txnId={t.id}
-                                      currentValue={t.accountId}
-                                      accounts={accounts}
-                                      onAccept={id=>{ stageClassify(t.id,id); }}
-                                      onCancel={()=>setEditingId(null)}
-                                      onEnterNext={()=>advanceToNext(t.id)}
-                                      hideAcceptButton={true}
-                                    />
-                                  : pendingQueue[t.id]
-                                    ? (()=>{ const pa=accounts.find(a=>a.id===pendingQueue[t.id]); return (
-                                        <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                          {pa&&<span className={`badge badge-${pa.type.toLowerCase()}`} style={{fontSize:10}}>{pa.type}</span>}
-                                          <span style={{fontSize:12,color:"var(--text2)"}}>{pa?.name}</span>
-                                          <span style={{fontSize:10,color:"var(--amber)",marginLeft:2}}>● pending</span>
-                                        </div>); })()
-                                  : <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                      {t.splits && t.splits.length > 1
-                                        ? <><span className="badge" style={{background:"rgba(167,139,250,.15)",color:"var(--purple)",fontSize:10}}>Split</span>
-                                            <span style={{fontSize:12,color:"var(--text2)"}}>{t.splits.length} categories</span>
-                                            <span style={{fontSize:10,color:"var(--text3)"}}>✎</span></>
-                                        : catAcct
-                                          ? <><span className={`badge badge-${catAcct.type.toLowerCase()}`} style={{fontSize:10}}>{catAcct.type}</span>
-                                              <span style={{fontSize:12,color:"var(--text2)"}}>{catAcct.name}</span>
-                                              <span style={{fontSize:10,color:"var(--text3)"}}>✎</span></>
-                                          : <span style={{fontSize:12,color:"var(--text3)"}}>Click to classify…</span>
-                                      }
+                              <td style={{cursor:t.isJE?"default":"pointer"}} onClick={e=>{e.stopPropagation();if(!t.isJE&&!isEditing)setEditingId(t.id);}}>
+                                {t.isJE
+                                  ? <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                      <span style={{fontSize:10,background:"rgba(167,139,250,.15)",color:"var(--purple)",padding:"1px 5px",borderRadius:4,fontFamily:"DM Mono,monospace"}}>JE</span>
+                                      <span style={{fontSize:12,color:"var(--text3)"}}>Journal Entry</span>
                                     </div>
+                                  : isEditing
+                                    ? <InlineEditor
+                                        txnId={t.id}
+                                        currentValue={t.accountId}
+                                        accounts={accounts}
+                                        onAccept={id=>{ stageClassify(t.id,id); }}
+                                        onCancel={()=>setEditingId(null)}
+                                        onEnterNext={()=>advanceToNext(t.id)}
+                                        hideAcceptButton={true}
+                                      />
+                                    : pendingQueue[t.id]
+                                      ? (()=>{ const pa=accounts.find(a=>a.id===pendingQueue[t.id]); return (
+                                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                            {pa&&<span className={`badge badge-${pa.type.toLowerCase()}`} style={{fontSize:10}}>{pa.type}</span>}
+                                            <span style={{fontSize:12,color:"var(--text2)"}}>{pa?.name}</span>
+                                            <span style={{fontSize:10,color:"var(--amber)",marginLeft:2}}>● pending</span>
+                                          </div>); })()
+                                      : <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                          {t.splits && t.splits.length > 1
+                                            ? <><span className="badge" style={{background:"rgba(167,139,250,.15)",color:"var(--purple)",fontSize:10}}>Split</span>
+                                                <span style={{fontSize:12,color:"var(--text2)"}}>{t.splits.length} categories</span>
+                                                <span style={{fontSize:10,color:"var(--text3)"}}>✎</span></>
+                                            : catAcct
+                                              ? <><span className={`badge badge-${catAcct.type.toLowerCase()}`} style={{fontSize:10}}>{catAcct.type}</span>
+                                                  <span style={{fontSize:12,color:"var(--text2)"}}>{catAcct.name}</span>
+                                                  <span style={{fontSize:10,color:"var(--text3)"}}>✎</span></>
+                                              : <span style={{fontSize:12,color:"var(--text3)"}}>Click to classify…</span>
+                                          }
+                                        </div>
                                 }
                               </td>
                               <td style={{paddingLeft:2,whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
@@ -3929,10 +3938,13 @@ export default function FinanceApp() {
     }
   },[tabList]);
 
-  // Transactions scoped to active source
+  // Transactions scoped to active source — includes txns FROM this account
+  // AND txns classified TO this account (double-entry: the counterpart leg)
   const sourceTxns = useMemo(()=>{
     if (activeSrcId==="all") return transactions;
-    return transactions.filter(t=>t.sourceId===activeSrcId);
+    return transactions.filter(t=>
+      t.sourceId===activeSrcId || t.accountId===activeSrcId
+    );
   },[transactions, activeSrcId]);
 
   // All classified txns filtered by date range (for reports)
