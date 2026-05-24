@@ -3281,12 +3281,15 @@ export default function FinanceApp() {
   const [showRuleModal,   setShowRuleModal]   = useState(false);
   const [modalRule,       setModalRule]       = useState(null);
 
-  // ── Explicit save — only fires when user makes a change ──────────────────
+  // ── Explicit save — builds payload from latest state via functional update ─
   const saveTimerRef = useRef(null);
-  const saveToServer = useCallback((payload) => {
-    if (!payload.accounts?.length && !payload.transactions?.length) return;
+  const pendingSaveRef = useRef(null);
+
+  const scheduleSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
+      const payload = pendingSaveRef.current;
+      if (!payload || (!payload.accounts?.length && !payload.transactions?.length)) return;
       fetch(`${API}/api/data`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3299,7 +3302,7 @@ export default function FinanceApp() {
     }, 1500);
   }, []);
 
-  // Build the full payload from current state (using refs to avoid stale closures)
+  // Called after any mutation — reads latest state via the stateRef
   const stateRef = useRef({});
   useEffect(() => {
     stateRef.current = {
@@ -3310,11 +3313,16 @@ export default function FinanceApp() {
     };
   });
 
+  // initialLoadDone prevents saves triggered by the initial data load
+  const initialLoadDone = useRef(false);
+
   const save = useCallback(() => {
+    if (!initialLoadDone.current) return;
     const p = stateRef.current;
     if (!p.accounts?.length && !p.transactions?.length) return;
-    saveToServer(p);
-  }, [saveToServer]);
+    pendingSaveRef.current = p;
+    scheduleSave();
+  }, [scheduleSave]);
   // sourceId = chart-of-accounts account id (e.g. "1001")
   // sourceName = display name for the tab
   const handleImport = useCallback((csvText, sourceId, sourceName) => {
@@ -3808,6 +3816,7 @@ export default function FinanceApp() {
           if (d.defaultThemeName)      setDefaultThemeName(d.defaultThemeName);
         };
         apply();
+        setTimeout(() => { initialLoadDone.current = true; }, 1000);
       })
       .catch(() => {
         try {
@@ -3830,6 +3839,7 @@ export default function FinanceApp() {
           if (d.customReportTheme)     setCustomReportTheme(d.customReportTheme);
           if (d.themeOverrides)        setThemeOverrides(d.themeOverrides);
           if (d.defaultThemeName)      setDefaultThemeName(d.defaultThemeName);
+          setTimeout(() => { initialLoadDone.current = true; }, 1000);
         } catch(e) { console.warn("Could not load saved data:", e); }
       });
   }, []);
