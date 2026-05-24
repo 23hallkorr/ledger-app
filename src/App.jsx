@@ -2088,7 +2088,7 @@ function ResizeTh({ width, onResize, children, style={} }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSACTION TABLE
 // ─────────────────────────────────────────────────────────────────────────────
-function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manualJEs, onClassify, onSplit, onMatchTransfer, onDelete, onUpdate, rules, onApplyRules }) {
+function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manualJEs, onClassify, onSplit, onMatchTransfer, onDelete, onUpdate, rules, onApplyRules, onEditJE }) {
   const [selected,      setSelected]      = useState(new Set());
   const [search,        setSearch]        = useState("");
   const [section,       setSection]       = useState("uncategorized");
@@ -2100,6 +2100,10 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
   const [pendingQueue,  setPendingQueue]  = useState({});
   const [confirmDelId,  setConfirmDelId]  = useState(null);
   const [editingDescId, setEditingDescId] = useState(null);
+  const [editingJE,     setEditingJE]     = useState(null);
+  const [filterDateFrom,setFilterDateFrom]= useState("");
+  const [filterDateTo,  setFilterDateTo]  = useState("");
+  const [filterRecon,   setFilterRecon]   = useState("all");
   const [editDescVal,   setEditDescVal]   = useState("");
   const [colWidths,     setColWidths]     = useState({date:90,desc:320,amt:110,cat:220,transfer:130,del:70});
   const [sortKey,       setSortKey]       = useState("date");
@@ -2123,11 +2127,13 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
         .filter(l=>l.accountId===sourceAccount.id)
         .map(l=>{
           const dr=parseFloat(l.debit)||0, cr=parseFloat(l.credit)||0;
+          const lineId = l.id||l.accountId;
+          const isReconciled = (je.reconciledLines||[]).includes(String(lineId));
           return {
-            id: `je-${je.id}-${l.id||Math.random()}`,
+            id: `je-${je.id}-${lineId}`,
             date: je.date, description: l.memo||je.memo||"Journal Entry",
             amount: dr>0?dr:-cr, accountId:"__je__", sourceId:sourceAccount.id,
-            reconciled:false, isJE:true, jeId:je.id,
+            reconciled: isReconciled, isJE:true, jeId:je.id, jeLineId:lineId,
           };
         })
     );
@@ -2137,7 +2143,11 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
 
   const filtered = useMemo(()=>{
     const q = search.toLowerCase();
-    const base = q ? pool.filter(t=>(t.description||"").toLowerCase().includes(q)) : [...pool];
+    let base = q ? pool.filter(t=>(t.description||"").toLowerCase().includes(q)) : [...pool];
+    if (filterDateFrom) base = base.filter(t=>(t.date||"")>=filterDateFrom);
+    if (filterDateTo)   base = base.filter(t=>(t.date||"")<=filterDateTo);
+    if (filterRecon==="reconciled")   base = base.filter(t=>t.reconciled);
+    if (filterRecon==="unreconciled") base = base.filter(t=>!t.reconciled);
     return base.sort((a,b)=>{
       let av,bv;
       if      (sortKey==="date")  { av=a.date||""; bv=b.date||""; }
@@ -2147,7 +2157,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
       if(av>bv) return sortDir==="asc"?1:-1;
       return 0;
     });
-  },[pool,search,sortKey,sortDir]);
+  },[pool,search,sortKey,sortDir,filterDateFrom,filterDateTo,filterRecon]);
 
   const totalPages = Math.max(1,Math.ceil(filtered.length/PAGE_SIZE));
   const pg = Math.min(currentPage,totalPages);
@@ -2265,7 +2275,22 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
       {/* Toolbar */}
       <div className="toolbar">
         <input type="text" placeholder="Search descriptions…" value={search}
-          onChange={e=>{setSearch(e.target.value);setCurrentPage(1);}} style={{width:200}}/>
+          onChange={e=>{setSearch(e.target.value);setCurrentPage(1);}} style={{width:180}}/>
+        <input type="date" value={filterDateFrom} onChange={e=>{setFilterDateFrom(e.target.value);setCurrentPage(1);}}
+          style={{fontSize:12,padding:"4px 6px",background:"var(--surface2)",border:"1px solid var(--border)",borderRadius:6,color:"var(--text)",width:130}}
+          title="From date"/>
+        <span style={{fontSize:11,color:"var(--text3)"}}>→</span>
+        <input type="date" value={filterDateTo} onChange={e=>{setFilterDateTo(e.target.value);setCurrentPage(1);}}
+          style={{fontSize:12,padding:"4px 6px",background:"var(--surface2)",border:"1px solid var(--border)",borderRadius:6,color:"var(--text)",width:130}}
+          title="To date"/>
+        <select value={filterRecon} onChange={e=>{setFilterRecon(e.target.value);setCurrentPage(1);}}
+          style={{fontSize:12,padding:"4px 8px",background:"var(--surface2)",border:"1px solid var(--border)",borderRadius:6,color:"var(--text)"}}>
+          <option value="all">All</option>
+          <option value="unreconciled">Unreconciled</option>
+          <option value="reconciled">Reconciled</option>
+        </select>
+        {(filterDateFrom||filterDateTo||filterRecon!=="all") &&
+          <button className="btn btn-ghost btn-sm" style={{fontSize:10}} onClick={()=>{setFilterDateFrom("");setFilterDateTo("");setFilterRecon("all");}}>✕ Clear</button>}
         <div className="toolbar-spacer"/>
         {rules.length>0 && <button className="btn btn-ghost btn-sm" onClick={onApplyRules}>⚡ Apply Rules</button>}
       </div>
@@ -2493,15 +2518,23 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                             </>
                         }
                         <td style={{paddingLeft:4,whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
-                          {confirmDelId===t.id
-                            ? <span style={{display:"flex",alignItems:"center",gap:5}}>
-                                <span style={{fontSize:11,color:"var(--text2)"}}>Sure?</span>
-                                <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.4)"}}
-                                  onClick={()=>{ onDelete&&onDelete(t.id); setConfirmDelId(null); }}>Yes</button>
-                                <button className="del-btn" onClick={()=>setConfirmDelId(null)}>No</button>
-                              </span>
-                            : <button className="del-btn" onClick={()=>setConfirmDelId(t.id)}>Delete</button>
-                          }
+                          <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                            {t.isJE && (
+                              <button className="drill-je-btn" onClick={()=>{
+                                const je=(manualJEs||[]).find(e=>e.id===t.jeId);
+                                if(je) setEditingJE(je);
+                              }}>✎ JE</button>
+                            )}
+                            {!t.isJE && (confirmDelId===t.id
+                              ? <span style={{display:"flex",alignItems:"center",gap:5}}>
+                                  <span style={{fontSize:11,color:"var(--text2)"}}>Sure?</span>
+                                  <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.4)"}}
+                                    onClick={()=>{ onDelete&&onDelete(t.id); setConfirmDelId(null); }}>Yes</button>
+                                  <button className="del-btn" onClick={()=>setConfirmDelId(null)}>No</button>
+                                </span>
+                              : <button className="del-btn" onClick={()=>setConfirmDelId(t.id)}>Delete</button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -2520,6 +2553,10 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
 
       {showBulkModal&&<BulkModal count={selected.size} accounts={accounts} onApply={applyBulk} onClose={()=>setShowBulkModal(false)}/>}
       {showBulkEditModal&&<BulkEditModal count={selected.size} onApply={applyBulkEdit} onClose={()=>setShowBulkEditModal(false)}/>}
+      {editingJE&&<JEEditModal je={editingJE} accounts={accounts}
+        onSave={je=>{ if(onEditJE) onEditJE(je); setEditingJE(null); }}
+        onDelete={id=>{ if(onEditJE) onEditJE({_delete:true,id}); setEditingJE(null); }}
+        onClose={()=>setEditingJE(null)}/>}
     </div>
   );
 }
@@ -2966,6 +3003,7 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
       .filter(je=>{ if(!je.date) return true; const nd=normDate(je.date); return nd<=endDate||(includeAfter&&nd>endDate); })
       .flatMap(je => je.lines
         .filter(l=>l.accountId===account.id)
+        .filter(l=>{ const lid=String(l.id||l.accountId); return !(je.reconciledLines||[]).includes(lid); })
         .map(l => ({
           id: `${je.id}::${l.id||l.accountId}`,
           type: "je",
@@ -3154,7 +3192,11 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
             {!isBalanced&&<span style={{fontSize:12,color:"var(--red)"}}>Off by {fmt(Math.abs(diff))}</span>}
             <button className="btn btn-ghost" onClick={()=>setStep(1)}>← Back</button>
             <button className="btn btn-primary" disabled={!isBalanced}
-              onClick={()=>onComplete(account.id,endDate,endBal,[...cleared].filter(id=>!id.includes("::")))}>
+              onClick={()=>{
+                const txnIds=[...cleared].filter(id=>!id.includes("::"));
+                const jeLineIds=[...cleared].filter(id=>id.includes("::"));
+                onComplete(account.id,endDate,endBal,txnIds,jeLineIds);
+              }}>
               ✓ Finish Reconciliation
             </button>
           </div>
@@ -3775,15 +3817,26 @@ export default function FinanceApp() {
   };
   const toggleAccountInactive = id => { setAccounts(prev=>prev.map(a=>a.id===id?{...a,inactive:!a.inactive}:a)); setTimeout(save,100); };
 
-  const completeReconciliation = useCallback((acctId,date,balance,clearedIds)=>{
+  const completeReconciliation = useCallback((acctId,date,balance,clearedIds,jeLineIds=[])=>{
     const histEntry = {
       id: `recon-${Date.now()}`,
-      acctId, date, balance, clearedIds,
+      acctId, date, balance, clearedIds, jeLineIds,
       timestamp: new Date().toISOString(),
     };
     setReconHistory(prev=>[histEntry,...prev]);
     setReconciliations(prev=>({...prev,[acctId]:{lastDate:date,lastBalance:balance}}));
     setTransactions(prev=>prev.map(t=>clearedIds.includes(t.id)?{...t,reconciled:true}:t));
+    // Mark reconciled JE lines — store per-JE which line IDs are reconciled
+    if (jeLineIds.length) {
+      setManualJEs(prev=>prev.map(je=>{
+        const reconciledLines = jeLineIds
+          .filter(lid=>lid.startsWith(je.id+"::"))
+          .map(lid=>lid.slice(je.id.length+2));
+        if (!reconciledLines.length) return je;
+        const existing = je.reconciledLines || [];
+        return {...je, reconciledLines:[...new Set([...existing,...reconciledLines])]};
+      }));
+    }
     setReconAccount(null);
     setTimeout(save, 100);
   },[save]);
@@ -4550,6 +4603,7 @@ export default function FinanceApp() {
                       onUpdate={updateTxn}
                       rules={rules}
                       onApplyRules={applyAllRules}
+                      onEditJE={postJournalEntry}
                     />
                 }
               </>
@@ -5094,14 +5148,7 @@ export default function FinanceApp() {
           </div>
         </div>
       )}
-      {reconHistory.length > 0 && (
-        <div style={{position:"fixed",bottom:20,right:20,zIndex:50}}>
-          <button className="btn btn-ghost btn-sm" style={{fontSize:11}}
-            onClick={()=>setShowReconHistory(v=>!v)}>
-            📋 {reconHistory.length} Reconciliation{reconHistory.length!==1?"s":""}
-          </button>
-        </div>
-      )}
+
     </>
   );
 }
