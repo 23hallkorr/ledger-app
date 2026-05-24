@@ -2752,6 +2752,7 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, onComplete
   const [editFields,   setEditFields]   = useState({});
 
   const acctById = Object.fromEntries((accounts||[]).map(a=>[a.id,a]));
+  const acct = acctById[account.id];
 
   const normDate = (d) => {
     if (!d) return "";
