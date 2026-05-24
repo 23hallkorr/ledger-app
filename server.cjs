@@ -8,6 +8,17 @@ const app    = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
+// ── Log every request ─────────────────────────────────────────────────────────
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path} — ${new Date().toISOString()}`);
+  if (req.method === "POST" && req.path === "/api/data") {
+    console.log(`  POST /api/data — txns:${req.body?.transactions?.length ?? "?"} accounts:${req.body?.accounts?.length ?? "?"}`);
+    // Log the call stack source (from headers if available)
+    console.log(`  Origin: ${req.headers.origin || "unknown"}`);
+  }
+  next();
+});
+
 // ── Plaid client ──────────────────────────────────────────────────────────────
 const plaidConfig = new Configuration({
   basePath: PlaidEnvironments[process.env.PLAID_ENV || "production"],
@@ -20,7 +31,6 @@ const plaidConfig = new Configuration({
 });
 const plaid = new PlaidApi(plaidConfig);
 
-// ── Plaid: create link token ──────────────────────────────────────────────────
 app.post("/api/plaid/link-token", async (req, res) => {
   try {
     const response = await plaid.linkTokenCreate({
@@ -38,19 +48,14 @@ app.post("/api/plaid/link-token", async (req, res) => {
   }
 });
 
-// ── Plaid: exchange public token for access token ─────────────────────────────
 app.post("/api/plaid/exchange-token", async (req, res) => {
   try {
-    const { public_token, accountName } = req.body;
+    const { public_token } = req.body;
     const exchange = await plaid.itemPublicTokenExchange({ public_token });
     const accessToken = exchange.data.access_token;
     const itemId      = exchange.data.item_id;
-
-    // Get account details from Plaid
     const acctRes = await plaid.accountsGet({ access_token: accessToken });
     const plaidAccounts = acctRes.data.accounts;
-
-    // Save each Plaid account to our PlaidAccount table
     const saved = [];
     for (const pa of plaidAccounts) {
       await prisma.plaidAccount.upsert({
@@ -67,16 +72,13 @@ app.post("/api/plaid/exchange-token", async (req, res) => {
   }
 });
 
-// ── Plaid: sync transactions for a given Plaid account ───────────────────────
 app.post("/api/plaid/sync", async (req, res) => {
   try {
     const { plaidAccountId } = req.body;
     const pa = await prisma.plaidAccount.findUnique({ where: { plaidAccountId } });
     if (!pa) return res.status(404).json({ error: "Plaid account not found" });
-
     let cursor = pa.cursor || "";
     let added  = [], modified = [], hasMore = true;
-
     while (hasMore) {
       const syncRes = await plaid.transactionsSync({
         access_token: pa.accessToken,
@@ -88,25 +90,19 @@ app.post("/api/plaid/sync", async (req, res) => {
       hasMore  = data.has_more;
       cursor   = data.next_cursor;
     }
-
-    // Update cursor
     await prisma.plaidAccount.update({ where: { plaidAccountId }, data: { cursor } });
-
-    // Build transactions in our format
-    const txns = [
-      ...added.map(t => ({
-        id:          `plaid-${t.transaction_id}`,
-        date:        t.date,
-        description: t.merchant_name || t.name || "",
-        amount:      -(t.amount), // Plaid: positive = debit, we want negative = money out
-        accountId:   null,
-        sourceId:    plaidAccountId,
-        reconciled:  false,
-        excluded:    false,
-        splits:      null,
-      })),
-    ];
-
+    const txns = added.map(t => ({
+      id:          `plaid-${t.transaction_id}`,
+      date:        t.date,
+      description: t.merchant_name || t.name || "",
+      amount:      -(t.amount),
+      accountId:   null,
+      sourceId:    plaidAccountId,
+      reconciled:  false,
+      excluded:    false,
+      splits:      null,
+    }));
+    console.log(`  Plaid sync: ${txns.length} new txns for ${plaidAccountId}`);
     res.json({ ok: true, added: txns, modifiedCount: modified.length });
   } catch (e) {
     console.error("Plaid sync error:", e.response?.data || e.message);
@@ -114,7 +110,6 @@ app.post("/api/plaid/sync", async (req, res) => {
   }
 });
 
-// ── Plaid: list connected accounts ───────────────────────────────────────────
 app.get("/api/plaid/accounts", async (req, res) => {
   try {
     const accounts = await prisma.plaidAccount.findMany({
@@ -126,7 +121,6 @@ app.get("/api/plaid/accounts", async (req, res) => {
   }
 });
 
-// ── Plaid: disconnect an account ─────────────────────────────────────────────
 app.delete("/api/plaid/accounts/:plaidAccountId", async (req, res) => {
   try {
     await prisma.plaidAccount.delete({ where: { plaidAccountId: req.params.plaidAccountId } });
@@ -136,9 +130,6 @@ app.delete("/api/plaid/accounts/:plaidAccountId", async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/data
-// ─────────────────────────────────────────────────────────────────────────────
 app.get("/api/data", async (req, res) => {
   try {
     const [transactions, accounts, sources, rules, manualJEs, reconciliationRows, settings] =
@@ -151,16 +142,14 @@ app.get("/api/data", async (req, res) => {
         prisma.reconciliation.findMany(),
         prisma.setting.findMany(),
       ]);
-
+    console.log(`  GET /api/data — returning txns:${transactions.length} accounts:${accounts.length}`);
     const reconciliations = {};
     reconciliationRows.forEach(r => {
       reconciliations[r.accountId] = { lastDate: r.lastDate, lastBalance: r.lastBalance };
     });
-
     const excludedTxns = transactions.filter(t => t.excluded).map(t => t.id);
     const settingMap = {};
     settings.forEach(s => { settingMap[s.key] = s.value; });
-
     res.json({
       transactions: transactions.map(t => ({
         id: t.id, date: t.date, description: t.description, amount: t.amount,
@@ -192,9 +181,6 @@ app.get("/api/data", async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/data
-// ─────────────────────────────────────────────────────────────────────────────
 app.post("/api/data", async (req, res) => {
   const {
     transactions = [], accounts = [], sources = [], rules = [], manualJEs = [],
@@ -204,12 +190,14 @@ app.post("/api/data", async (req, res) => {
   } = req.body;
 
   if (transactions.length === 0 && accounts.length === 0) {
+    console.log("  POST /api/data SKIPPED — empty payload");
     return res.json({ ok: true, skipped: true });
   }
 
+  console.log(`  POST /api/data WRITING — txns:${transactions.length} accounts:${accounts.length}`);
+
   try {
     const excludedSet = new Set(excludedTxns);
-
     await prisma.transaction.deleteMany();
     await prisma.account.deleteMany();
     await prisma.source.deleteMany();
@@ -228,7 +216,6 @@ app.post("/api/data", async (req, res) => {
         },
       });
     }
-
     for (let idx = 0; idx < accounts.length; idx++) {
       const a = accounts[idx];
       await prisma.account.create({
@@ -242,7 +229,6 @@ app.post("/api/data", async (req, res) => {
         },
       });
     }
-
     for (const s of sources) {
       await prisma.source.create({ data: { id: s.id, name: s.name } });
     }
@@ -261,13 +247,11 @@ app.post("/api/data", async (req, res) => {
         data: { accountId, lastDate: r.lastDate, lastBalance: r.lastBalance },
       });
     }
-
     const upsert = async (key, value) => {
       await prisma.setting.upsert({
         where: { key }, update: { value: value ?? null }, create: { key, value: value ?? null },
       });
     };
-
     await upsert("accountOrder",      accountOrder);
     await upsert("reportNames",       reportNames);
     await upsert("customTheme",       customTheme);
@@ -278,6 +262,7 @@ app.post("/api/data", async (req, res) => {
     await upsert("themeOverrides",    themeOverrides ?? {});
     await upsert("defaultThemeName",  defaultThemeName ?? null);
 
+    console.log(`  POST /api/data DONE`);
     res.json({ ok: true });
   } catch (e) {
     console.error("POST /api/data error:", e);
