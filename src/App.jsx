@@ -3740,6 +3740,7 @@ export default function FinanceApp() {
   };
 
   // ── Load from server on startup, fall back to localStorage ──────────────
+  const loadingRef = useRef(true); // true = currently loading, block saves
   useEffect(() => {
     const applyData = (d) => {
       // Only apply arrays if they have content — never overwrite good data with empty arrays
@@ -3762,7 +3763,11 @@ export default function FinanceApp() {
       if (d.customReportTheme)     setCustomReportTheme(d.customReportTheme);
       if (d.themeOverrides)        setThemeOverrides(d.themeOverrides);
       if (d.defaultThemeName)      setDefaultThemeName(d.defaultThemeName);
-      setDataLoaded(true);
+      // Wait 500ms after all setStates before allowing saves
+      setTimeout(() => {
+        loadingRef.current = false;
+        setDataLoaded(true);
+      }, 500);
     };
     fetch(`${API}/api/data`)
       .then(r => r.json())
@@ -3771,17 +3776,19 @@ export default function FinanceApp() {
         try {
           const saved = localStorage.getItem("ledger_data");
           if (saved) applyData(JSON.parse(saved));
-          else setDataLoaded(true);
-        } catch(e) { setDataLoaded(true); console.warn("Could not load saved data:", e); }
+          else { loadingRef.current = false; setDataLoaded(true); }
+        } catch(e) {
+          loadingRef.current = false;
+          setDataLoaded(true);
+          console.warn("Could not load saved data:", e);
+        }
       });
   }, []);
 
-  // ── Save to server (debounced 1s) ─────────────────────────────────────────
-  // localStorage is NOT used as a save target — server is the source of truth.
-  // localStorage is only written as an emergency backup after a successful server save.
+  // ── Save to server (debounced 2s) ─────────────────────────────────────────
   useEffect(() => {
     if (!dataLoaded) return;
-    // Never save if core data is empty — protects against race conditions
+    if (loadingRef.current) return; // still loading, don't save
     if (!accounts.length && !transactions.length) return;
     const payload = {
       transactions, accounts, sources, rules, manualJEs,
@@ -3796,11 +3803,10 @@ export default function FinanceApp() {
         body: JSON.stringify(payload),
       })
       .then(() => {
-        // Only update localStorage after a successful server save
         try { localStorage.setItem("ledger_data", JSON.stringify(payload)); } catch(e) {}
       })
       .catch(e => console.warn("Could not save to server:", e));
-    }, 1000);
+    }, 2000);
     return () => clearTimeout(tid);
   }, [dataLoaded, transactions, accounts, sources, rules, manualJEs, accountOrder,
       reportNames, reconciliations, reconHistory, customTheme, themeName, showCoaInactive,
