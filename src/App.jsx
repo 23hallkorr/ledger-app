@@ -3281,6 +3281,24 @@ export default function FinanceApp() {
   const [showRuleModal,   setShowRuleModal]   = useState(false);
   const [modalRule,       setModalRule]       = useState(null);
 
+  // ── Explicit save — only fires when user makes a change ──────────────────
+  const saveTimerRef = useRef(null);
+  const saveToServer = useCallback((payload) => {
+    if (!payload.accounts?.length && !payload.transactions?.length) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      fetch(`${API}/api/data`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      .then(() => {
+        try { localStorage.setItem("ledger_data", JSON.stringify(payload)); } catch(e) {}
+      })
+      .catch(e => console.warn("Could not save to server:", e));
+    }, 1500);
+  }, []);
+
   // Build the full payload from current state (using refs to avoid stale closures)
   const stateRef = useRef({});
   useEffect(() => {
@@ -3816,23 +3834,6 @@ export default function FinanceApp() {
       });
   }, []);
 
-  // ── Explicit save function — called only when user makes a change ─────────
-  const saveTimerRef = useRef(null);
-  const saveToServer = useCallback((payload) => {
-    if (!payload.accounts?.length && !payload.transactions?.length) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      fetch(`${API}/api/data`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      })
-      .then(() => {
-        try { localStorage.setItem("ledger_data", JSON.stringify(payload)); } catch(e) {}
-      })
-      .catch(e => console.warn("Could not save to server:", e));
-    }, 1500);
-  }, []);
   // Close search on outside click
   useEffect(()=>{
     if (!showSearch) return;
