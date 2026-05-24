@@ -210,6 +210,7 @@ app.get("/api/data", async (req, res) => {
         id: t.id, date: t.date, description: t.description, amount: t.amount,
         accountId: t.accountId ?? null, sourceId: t.sourceId ?? null,
         transferMatchId: t.transferMatchId ?? null, reconciled: t.reconciled,
+        reconciledAccts: t.reconciledAccts ?? [],
         splits: t.splits ?? null,
       })),
       accounts: accounts.map(a => ({
@@ -277,7 +278,9 @@ app.post("/api/data", async (req, res) => {
           id: t.id, date: t.date || "", description: t.description || "",
           amount: t.amount ?? 0, accountId: t.accountId ?? null,
           sourceId: t.sourceId ?? null, transferMatchId: t.transferMatchId ?? null,
-          reconciled: t.reconciled ?? false, excluded: excludedSet.has(t.id),
+          reconciled: t.reconciled ?? false,
+          reconciledAccts: t.reconciledAccts ?? [],
+          excluded: excludedSet.has(t.id),
           splits: t.splits ?? undefined,
         },
       });
