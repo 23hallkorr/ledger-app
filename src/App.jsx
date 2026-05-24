@@ -186,6 +186,7 @@ const styles = `
   .match-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:var(--radius);border:1px solid rgba(96,165,250,.4);background:rgba(96,165,250,.1);color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;}
   .match-btn:hover{background:rgba(96,165,250,.2);}
   .matched-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--blue);font-family:'DM Mono',monospace;background:rgba(96,165,250,.1);padding:2px 7px;border-radius:10px;border:1px solid rgba(96,165,250,.2);}
+  .transfer-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:10px;background:rgba(167,139,250,.1);color:var(--purple);border:1px solid rgba(167,139,250,.2);white-space:nowrap;}
 
   /* Date range bar */
   .date-bar{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:10px 16px;margin-bottom:20px;flex-wrap:wrap;}
@@ -2412,31 +2413,41 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                     const showR = t.reconciled && (
                       t.reconciledAccts
                         ? t.reconciledAccts.includes(sourceAccount?.id)
-                        : true // legacy: no reconciledAccts, show for sourceId match only
+                        : t.sourceId === sourceAccount?.id // legacy: only show on source side
                     );
 
                     return (
                       <tr key={t.id}
                         className={`${selected.has(t.id)?"selected":""} ${isEditing?"row-editing":""} ${pendingQueue[t.id]?"row-pending-classify":""}`}
+                        style={isCounterpart?{opacity:0.8,background:"rgba(167,139,250,.04)"}:{}}
                       >
                         <td style={{paddingLeft:14}} onClick={e=>e.stopPropagation()}>
-                          <input type="checkbox" className="cb" checked={selected.has(t.id)}
+                          {!isCounterpart && <input type="checkbox" className="cb" checked={selected.has(t.id)}
                             onChange={()=>{}}
-                            onClick={e=>toggleOneShift(t.id, rowIdx, e)}/>
+                            onClick={e=>toggleOneShift(t.id, rowIdx, e)}/>}
                         </td>
                         <td className="font-mono" style={{color:"var(--text3)",fontSize:12,whiteSpace:"nowrap"}}>
                           {t.date}
                           {showR && <span style={{marginLeft:5,fontSize:10,color:"var(--green)",fontWeight:700}}>R</span>}
                         </td>
-                        <td style={{color:"var(--text)"}} onDoubleClick={e=>{e.stopPropagation();setEditingDescId(t.id);setEditDescVal(t.description||"");}}>
-                          {editingDescId===t.id
+                        <td style={{color:isCounterpart?"var(--text2)":"var(--text)"}}
+                          onDoubleClick={e=>{if(isCounterpart)return;e.stopPropagation();setEditingDescId(t.id);setEditDescVal(t.description||"");}}>
+                          {editingDescId===t.id && !isCounterpart
                             ? <input autoFocus type="text" value={editDescVal}
                                 onChange={e=>setEditDescVal(e.target.value)}
                                 onBlur={()=>{if(onUpdate)onUpdate(t.id,{description:editDescVal});setEditingDescId(null);}}
                                 onKeyDown={e=>{if(e.key==="Enter"){if(onUpdate)onUpdate(t.id,{description:editDescVal});setEditingDescId(null);}if(e.key==="Escape")setEditingDescId(null);}}
                                 onClick={e=>e.stopPropagation()}
                                 style={{width:"100%",fontSize:13,padding:"2px 6px",background:"var(--surface2)",border:"1px solid var(--accent)",borderRadius:4,color:"var(--text)"}}/>
-                            : <>{t.description}{isMatched && <span className="matched-badge" style={{marginLeft:8}}>🔗 matched</span>}</>
+                            : <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
+                                <span>{t.description}</span>
+                                {isCounterpart && displayAcct &&
+                                  <span className="transfer-badge" style={{marginLeft:6}}>
+                                    ⇄ from {displayAcct.name}
+                                  </span>
+                                }
+                                {isMatched && !isCounterpart && <span className="matched-badge" style={{marginLeft:8}}>🔗 matched</span>}
+                              </div>
                           }
                         </td>
 
@@ -2448,18 +2459,23 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                               <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:"var(--purple)"}}>
                                 {entry && isCreditOnSrc ? fmt(entry.absAmount) : ""}
                               </td>
-                              <td style={{cursor:t.isJE?"default":"pointer"}} onClick={e=>{e.stopPropagation();if(!t.isJE&&!isEditing)setEditingId(t.id);}}>
+                              <td style={{cursor:(t.isJE||isCounterpart)?"default":"pointer"}} onClick={e=>{e.stopPropagation();if(!t.isJE&&!isCounterpart&&!isEditing)setEditingId(t.id);}}>
                                 {t.isJE
                                   ? <div style={{display:"flex",alignItems:"center",gap:6}}>
                                       <span style={{fontSize:10,background:"rgba(167,139,250,.15)",color:"var(--purple)",padding:"1px 5px",borderRadius:4,fontFamily:"DM Mono,monospace"}}>JE</span>
                                       <span style={{fontSize:12,color:"var(--text3)"}}>Journal Entry</span>
                                     </div>
+                                  : isCounterpart
+                                    ? <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                        {displayAcct && <span className={`badge badge-${displayAcct.type.toLowerCase()}`} style={{fontSize:10}}>{displayAcct.type}</span>}
+                                        <span style={{fontSize:12,color:"var(--text2)"}}>{displayAcct?.name || "—"}</span>
+                                      </div>
                                   : isEditing
                                     ? <InlineEditor
                                         txnId={t.id}
-                                        currentValue={isCounterpart ? t.sourceId : t.accountId}
+                                        currentValue={t.accountId}
                                         accounts={accounts}
-                                        onAccept={id=>{ stageClassify(t.id, isCounterpart ? id : id); }}
+                                        onAccept={id=>{ stageClassify(t.id,id); }}
                                         onCancel={()=>setEditingId(null)}
                                         onEnterNext={()=>advanceToNext(t.id)}
                                         hideAcceptButton={true}
@@ -2491,12 +2507,17 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                             </>
                           : <>
                               <td><span className={`amount ${t.amount>=0?"pos":"neg"}`}>{fmt(t.amount)}</span></td>
-                              <td style={{cursor:t.isJE?"default":"pointer"}} onClick={e=>{e.stopPropagation();if(!t.isJE&&!isEditing)setEditingId(t.id);}}>
+                              <td style={{cursor:(t.isJE||isCounterpart)?"default":"pointer"}} onClick={e=>{e.stopPropagation();if(!t.isJE&&!isCounterpart&&!isEditing)setEditingId(t.id);}}>
                                 {t.isJE
                                   ? <div style={{display:"flex",alignItems:"center",gap:6}}>
                                       <span style={{fontSize:10,background:"rgba(167,139,250,.15)",color:"var(--purple)",padding:"1px 5px",borderRadius:4,fontFamily:"DM Mono,monospace"}}>JE</span>
                                       <span style={{fontSize:12,color:"var(--text3)"}}>Journal Entry</span>
                                     </div>
+                                  : isCounterpart
+                                    ? <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                        {displayAcct && <span className={`badge badge-${displayAcct.type.toLowerCase()}`} style={{fontSize:10}}>{displayAcct.type}</span>}
+                                        <span style={{fontSize:12,color:"var(--text2)"}}>{displayAcct?.name || "—"}</span>
+                                      </div>
                                   : isEditing
                                     ? <InlineEditor
                                         txnId={t.id}
@@ -2515,7 +2536,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                             <span style={{fontSize:10,color:"var(--amber)",marginLeft:2}}>● pending</span>
                                           </div>); })()
                                       : <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                          {t.splits && t.splits.length > 1 && !isCounterpart
+                                          {t.splits && t.splits.length > 1
                                             ? <><span className="badge" style={{background:"rgba(167,139,250,.15)",color:"var(--purple)",fontSize:10}}>Split</span>
                                                 <span style={{fontSize:12,color:"var(--text2)"}}>{t.splits.length} categories</span>
                                                 <span style={{fontSize:10,color:"var(--text3)"}}>✎</span></>
@@ -2544,11 +2565,9 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                 if(je) setEditingJE(je);
                               }}>✎ JE</button>
                             )}
-                            {!t.isJE && (confirmDelId===t.id
+                            {!t.isJE && !isCounterpart && (confirmDelId===t.id
                               ? <span style={{display:"flex",alignItems:"center",gap:5}}>
-                                  <span style={{fontSize:11,color:"var(--text2)"}}>
-                                    {isCounterpart ? "Remove from both accounts?" : "Sure?"}
-                                  </span>
+                                  <span style={{fontSize:11,color:"var(--text2)"}}>Sure?</span>
                                   <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.4)"}}
                                     onClick={()=>{ onDelete&&onDelete(t.id); setConfirmDelId(null); }}>Yes</button>
                                   <button className="del-btn" onClick={()=>setConfirmDelId(null)}>No</button>
