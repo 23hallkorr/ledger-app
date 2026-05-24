@@ -179,9 +179,28 @@ app.delete("/api/plaid/accounts/:plaidAccountId", async (req, res) => {
   }
 });
 
+// ── One-time migration route — visit once then remove ────────────────────────
+app.get("/api/run-migration", async (req, res) => {
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "reconciledAccts" TEXT[] DEFAULT '{}'`
+    );
+    res.json({ ok: true, message: "Column added successfully" });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── GET /api/data ─────────────────────────────────────────────────────────────
 app.get("/api/data", async (req, res) => {
   try {
+    // Run migration first (safe - IF NOT EXISTS)
+    try {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "reconciledAccts" TEXT[] DEFAULT '{}'`
+      );
+    } catch(migErr) { console.warn("Migration skipped:", migErr.message); }
+
     const [transactions, accounts, sources, rules, manualJEs, reconciliationRows, settings] =
       await Promise.all([
         prisma.transaction.findMany(),
@@ -210,7 +229,7 @@ app.get("/api/data", async (req, res) => {
         id: t.id, date: t.date, description: t.description, amount: t.amount,
         accountId: t.accountId ?? null, sourceId: t.sourceId ?? null,
         transferMatchId: t.transferMatchId ?? null, reconciled: t.reconciled,
-        reconciledAccts: t.reconciledAccts ?? [],
+        reconciledAccts: Array.isArray(t.reconciledAccts) ? t.reconciledAccts : [],
         splits: t.splits ?? null,
       })),
       accounts: accounts.map(a => ({
@@ -279,7 +298,7 @@ app.post("/api/data", async (req, res) => {
           amount: t.amount ?? 0, accountId: t.accountId ?? null,
           sourceId: t.sourceId ?? null, transferMatchId: t.transferMatchId ?? null,
           reconciled: t.reconciled ?? false,
-          reconciledAccts: t.reconciledAccts ?? [],
+          reconciledAccts: Array.isArray(t.reconciledAccts) ? t.reconciledAccts : [],
           excluded: excludedSet.has(t.id),
           splits: t.splits ?? undefined,
         },
