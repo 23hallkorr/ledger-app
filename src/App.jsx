@@ -2404,6 +2404,16 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                     const isEditing    = editingId === t.id;
                     const matchCandidate = matchCandidates[t.id];
                     const isMatched    = !!t.transferMatchId;
+                    // Is this txn appearing from the "other side" (classified TO this account)?
+                    const isCounterpart = sourceAccount && t.accountId===sourceAccount.id && t.sourceId!==sourceAccount.id;
+                    // The category to display — if counterpart, show the source account; else show category
+                    const displayAcct = isCounterpart ? acctById[t.sourceId] : catAcct;
+                    // R badge: only show if this account was the one reconciled
+                    const showR = t.reconciled && (
+                      t.reconciledAccts
+                        ? t.reconciledAccts.includes(sourceAccount?.id)
+                        : true // legacy: no reconciledAccts, show for sourceId match only
+                    );
 
                     return (
                       <tr key={t.id}
@@ -2416,7 +2426,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                         </td>
                         <td className="font-mono" style={{color:"var(--text3)",fontSize:12,whiteSpace:"nowrap"}}>
                           {t.date}
-                          {t.reconciled && <span style={{marginLeft:5,fontSize:10,color:"var(--green)",fontWeight:700}}>R</span>}
+                          {showR && <span style={{marginLeft:5,fontSize:10,color:"var(--green)",fontWeight:700}}>R</span>}
                         </td>
                         <td style={{color:"var(--text)"}} onDoubleClick={e=>{e.stopPropagation();setEditingDescId(t.id);setEditDescVal(t.description||"");}}>
                           {editingDescId===t.id
@@ -2447,9 +2457,9 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                   : isEditing
                                     ? <InlineEditor
                                         txnId={t.id}
-                                        currentValue={t.accountId}
+                                        currentValue={isCounterpart ? t.sourceId : t.accountId}
                                         accounts={accounts}
-                                        onAccept={id=>{ stageClassify(t.id,id); }}
+                                        onAccept={id=>{ stageClassify(t.id, isCounterpart ? id : id); }}
                                         onCancel={()=>setEditingId(null)}
                                         onEnterNext={()=>advanceToNext(t.id)}
                                         hideAcceptButton={true}
@@ -2462,8 +2472,8 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                             <span style={{fontSize:10,color:"var(--amber)",marginLeft:2}}>● pending</span>
                                           </div>); })()
                                       : <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                          {catAcct && <span className={`badge badge-${catAcct.type.toLowerCase()}`} style={{fontSize:10}}>{catAcct.type}</span>}
-                                          <span style={{fontSize:12,color:"var(--text2)"}}>{catAcct?.name || <span style={{color:"var(--text3)"}}>—</span>}</span>
+                                          {displayAcct && <span className={`badge badge-${displayAcct.type.toLowerCase()}`} style={{fontSize:10}}>{displayAcct.type}</span>}
+                                          <span style={{fontSize:12,color:"var(--text2)"}}>{displayAcct?.name || <span style={{color:"var(--text3)"}}>—</span>}</span>
                                           <span style={{fontSize:10,color:"var(--text3)"}}>✎</span>
                                         </div>
                                 }
@@ -2505,13 +2515,13 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                             <span style={{fontSize:10,color:"var(--amber)",marginLeft:2}}>● pending</span>
                                           </div>); })()
                                       : <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                          {t.splits && t.splits.length > 1
+                                          {t.splits && t.splits.length > 1 && !isCounterpart
                                             ? <><span className="badge" style={{background:"rgba(167,139,250,.15)",color:"var(--purple)",fontSize:10}}>Split</span>
                                                 <span style={{fontSize:12,color:"var(--text2)"}}>{t.splits.length} categories</span>
                                                 <span style={{fontSize:10,color:"var(--text3)"}}>✎</span></>
-                                            : catAcct
-                                              ? <><span className={`badge badge-${catAcct.type.toLowerCase()}`} style={{fontSize:10}}>{catAcct.type}</span>
-                                                  <span style={{fontSize:12,color:"var(--text2)"}}>{catAcct.name}</span>
+                                            : displayAcct
+                                              ? <><span className={`badge badge-${displayAcct.type.toLowerCase()}`} style={{fontSize:10}}>{displayAcct.type}</span>
+                                                  <span style={{fontSize:12,color:"var(--text2)"}}>{displayAcct.name}</span>
                                                   <span style={{fontSize:10,color:"var(--text3)"}}>✎</span></>
                                               : <span style={{fontSize:12,color:"var(--text3)"}}>Click to classify…</span>
                                           }
@@ -2536,7 +2546,9 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                             )}
                             {!t.isJE && (confirmDelId===t.id
                               ? <span style={{display:"flex",alignItems:"center",gap:5}}>
-                                  <span style={{fontSize:11,color:"var(--text2)"}}>Sure?</span>
+                                  <span style={{fontSize:11,color:"var(--text2)"}}>
+                                    {isCounterpart ? "Remove from both accounts?" : "Sure?"}
+                                  </span>
                                   <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.4)"}}
                                     onClick={()=>{ onDelete&&onDelete(t.id); setConfirmDelId(null); }}>Yes</button>
                                   <button className="del-btn" onClick={()=>setConfirmDelId(null)}>No</button>
@@ -2995,7 +3007,13 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   // Combine bank transactions + JE lines for this account
   const allItems = useMemo(()=>{
     const txnItems = transactions
-      .filter(t=>(t.sourceId===account.id||t.accountId===account.id) && t.accountId && !t.reconciled)
+      .filter(t=>(t.sourceId===account.id||t.accountId===account.id) && t.accountId)
+      .filter(t=>{
+        // Only exclude if THIS account specifically reconciled it
+        if (!t.reconciled) return true;
+        if (!t.reconciledAccts) return !t.reconciled; // legacy
+        return !t.reconciledAccts.includes(account.id);
+      })
       .filter(t=>{ if(!t.date) return true; const nd=normDate(t.date); return nd<=endDate||(includeAfter&&nd>endDate); })
       .map(t=>({
         id: t.id,
@@ -3848,7 +3866,10 @@ export default function FinanceApp() {
     };
     setReconHistory(prev=>[histEntry,...prev]);
     setReconciliations(prev=>({...prev,[acctId]:{lastDate:date,lastBalance:balance}}));
-    setTransactions(prev=>prev.map(t=>clearedIds.includes(t.id)?{...t,reconciled:true}:t));
+    setTransactions(prev=>prev.map(t=>clearedIds.includes(t.id)
+      ? {...t, reconciled:true, reconciledAccts:[...new Set([...(t.reconciledAccts||[]),acctId])]}
+      : t
+    ));
     // Mark reconciled JE lines — store per-JE which line IDs are reconciled
     if (jeLineIds.length) {
       setManualJEs(prev=>prev.map(je=>{
@@ -3867,7 +3888,11 @@ export default function FinanceApp() {
   const undoReconciliation = useCallback((histId)=>{
     const entry = reconHistory.find(h=>h.id===histId);
     if (!entry) return;
-    setTransactions(prev=>prev.map(t=>entry.clearedIds.includes(t.id)?{...t,reconciled:false}:t));
+    setTransactions(prev=>prev.map(t=>{
+      if (!entry.clearedIds.includes(t.id)) return t;
+      const remaining = (t.reconciledAccts||[]).filter(a=>a!==entry.acctId);
+      return {...t, reconciled:remaining.length>0, reconciledAccts:remaining};
+    }));
     setReconHistory(prev=>prev.filter(h=>h.id!==histId));
     setReconciliations(prev=>{
       const remaining = reconHistory.filter(h=>h.id!==histId&&h.acctId===entry.acctId);
