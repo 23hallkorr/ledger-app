@@ -3608,6 +3608,7 @@ export default function FinanceApp() {
   const [plaidAccounts,   setPlaidAccounts]   = useState([]);
   const [plaidSyncing,    setPlaidSyncing]    = useState(false);
   const [bankBalances,    setBankBalances]    = useState({}); // {[sourceId]: {current, available, updatedAt}}
+  const [syncErrors,      setSyncErrors]      = useState({}); // {[plaidAccountId]: errorCode}
   const [showPlaidModal,  setShowPlaidModal]  = useState(false);
   const [showPlaidMapping,setShowPlaidMapping]= useState(false);
   const [plaidMappingAccounts, setPlaidMappingAccounts] = useState([]); // accounts returned by Plaid to map
@@ -3822,7 +3823,16 @@ export default function FinanceApp() {
         body: JSON.stringify({ plaidAccountId }),
       });
       const data = await res.json();
-      if (!data.ok) { console.error("Sync error:", data.error); return 0; }
+      if (!data.ok) {
+        console.error("Sync error:", data.error);
+        // Track connection errors so we can show a warning on the card
+        if (data.errorCode) {
+          setSyncErrors(prev => ({...prev, [plaidAccountId]: data.errorCode}));
+        }
+        return 0;
+      }
+      // Clear any previous error for this account on success
+      setSyncErrors(prev => { const n={...prev}; delete n[plaidAccountId]; return n; });
       if (data.added?.length) {
         const remapped = data.added.map(t => ({...t, sourceId}));
         const withRules = remapped.map(t => {
@@ -4689,6 +4699,23 @@ export default function FinanceApp() {
                               {isActive && <span className="bank-card-icon" title="Edit" onClick={e=>{e.stopPropagation();if(acct){setModalAccount(acct);setShowAcctModal(true);}}}>✎</span>}
                             </div>
                           </div>
+                          {(()=>{
+                            const pa = plaidAccounts.find(p=>(p.mappedToId||p.mappedTo)===s.id);
+                            const err = pa && syncErrors[pa.plaidAccountId];
+                            if (!err) return null;
+                            const msg = err==="ITEM_LOGIN_REQUIRED" ? "Reconnection required"
+                              : err==="INVALID_CREDENTIALS" ? "Invalid credentials"
+                              : err==="ITEM_LOCKED" ? "Account locked"
+                              : "Connection error";
+                            return (
+                              <div style={{background:"rgba(255,82,82,.12)",border:"1px solid rgba(255,82,82,.3)",borderRadius:6,padding:"5px 8px",marginBottom:8,display:"flex",alignItems:"center",gap:6}}
+                                onClick={e=>{e.stopPropagation();connectBank();}}>
+                                <span style={{fontSize:13}}>⚠️</span>
+                                <span style={{fontSize:11,color:"var(--red)",flex:1}}>{msg}</span>
+                                <span style={{fontSize:10,color:"var(--red)",textDecoration:"underline",cursor:"pointer"}}>Reconnect</span>
+                              </div>
+                            );
+                          })()}
                           <div className="bank-card-section">
                             <div className="bank-card-amount">{bankBal !== null ? fmt(bankBal) : "—"}</div>
                             <div className="bank-card-label">Bank Balance</div>

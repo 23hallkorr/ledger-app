@@ -106,7 +106,11 @@ app.post("/api/plaid/sync", async (req, res) => {
     res.json({ ok: true, added: txns, modifiedCount: modified.length });
   } catch (e) {
     console.error("Plaid sync error:", e.response?.data || e.message);
-    res.status(500).json({ error: e.response?.data?.error_message || e.message });
+    const errorCode = e.response?.data?.error_code || null;
+    res.status(500).json({
+      error: e.response?.data?.error_message || e.message,
+      errorCode,
+    });
   }
 });
 
