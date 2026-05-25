@@ -3949,8 +3949,9 @@ export default function FinanceApp() {
         return {...je, reconciledLines:[...new Set([...existing,...reconciledLines])]};
       }));
     }
-    setReconAccount(null);
-    setTimeout(save, 100);
+    // Close modal after state updates have been batched and applied
+    setTimeout(()=>setReconAccount(null), 50);
+    setTimeout(save, 200);
   },[save]);
 
   const undoReconciliation = useCallback((histId)=>{
