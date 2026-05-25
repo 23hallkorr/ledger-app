@@ -179,6 +179,18 @@ app.delete("/api/plaid/accounts/:plaidAccountId", async (req, res) => {
   }
 });
 
+// ── Reset reconciliations — visit once then remove ───────────────────────────
+app.get("/api/reset-reconciliations", async (req, res) => {
+  try {
+    await prisma.$executeRawUnsafe(`UPDATE "Transaction" SET reconciled = false, "reconciledAccts" = '{}'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM "Reconciliation"`);
+    await prisma.setting.deleteMany({ where: { key: "reconHistory" } });
+    res.json({ ok: true, message: "All reconciliations cleared" });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── One-time migration route — visit once then remove ────────────────────────
 app.get("/api/run-migration", async (req, res) => {
   try {
