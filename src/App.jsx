@@ -2430,8 +2430,10 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                             onClick={e=>toggleOneShift(t.id, rowIdx, e)}/>}
                         </td>
                         <td className="font-mono" style={{color:"var(--text3)",fontSize:12,whiteSpace:"nowrap"}}>
-                          {t.date}
-                          {showR && <span style={{marginLeft:5,fontSize:10,color:"var(--green)",fontWeight:700}}>R</span>}
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+                            <span>{t.date}</span>
+                            {showR && <span style={{fontSize:13,color:"var(--green)",fontWeight:800}}>R</span>}
+                          </div>
                         </td>
                         <td style={{color:isCounterpart?"var(--text2)":"var(--text)"}}
                           onDoubleClick={e=>{if(isCounterpart)return;e.stopPropagation();setEditingDescId(t.id);setEditDescVal(t.description||"");}}>
@@ -4910,7 +4912,7 @@ export default function FinanceApp() {
                                   <td style={{fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace"}}>
                                     {reconciliations[a.id]?.lastDate
                                       ? <span className="last-reconciled">✓ {reconciliations[a.id].lastDate}</span>
-                                      : <span>Never</span>}
+                                      : null}
                                   </td>
                                 )}
                                 <td>
