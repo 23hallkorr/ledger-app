@@ -3064,7 +3064,12 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
       .flatMap(je => je.lines
         .map((l, li) => ({...l, _lineIndex: li}))
         .filter(l=>l.accountId===account.id)
-        .filter(l=>{ const lid=String(l.id||l._lineIndex); return !(je.reconciledLines||[]).includes(lid); })
+        .filter(l=>{
+          const lid=String(l.id||l._lineIndex);
+          const reconLines = je.reconciledLines||[];
+          console.log(`JE ${je.id} line ${lid}: reconciledLines=${JSON.stringify(reconLines)}, isReconciled=${reconLines.includes(lid)}`);
+          return !reconLines.includes(lid);
+        })
         .map(l => ({
           id: `${je.id}::${l.id||l._lineIndex}`,
           type: "je",
