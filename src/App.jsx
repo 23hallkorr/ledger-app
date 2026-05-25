@@ -3047,7 +3047,9 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
         type: "txn",
         date: t.date,
         description: t.description,
-        amount: t.amount,
+        // For counterpart transactions (classified TO this account from another source),
+        // flip the sign so it reflects this account's perspective
+        amount: t.accountId===account.id && t.sourceId!==account.id ? -t.amount : t.amount,
         accountId: t.accountId,
         sourceId: t.sourceId,
         _raw: t,
@@ -3056,13 +3058,14 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
     const jeItems = (manualJEs||[])
       .filter(je=>{ if(!je.date) return true; const nd=normDate(je.date); return nd<=endDate||(includeAfter&&nd>endDate); })
       .flatMap(je => je.lines
+        .map((l, li) => ({...l, _lineIndex: li}))
         .filter(l=>l.accountId===account.id)
-        .filter(l=>{ const lid=String(l.id||l.accountId); return !(je.reconciledLines||[]).includes(lid); })
+        .filter(l=>{ const lid=String(l.id||l._lineIndex); return !(je.reconciledLines||[]).includes(lid); })
         .map(l => ({
-          id: `${je.id}::${l.id||l.accountId}`,
+          id: `${je.id}::${l.id||l._lineIndex}`,
           type: "je",
           date: je.date,
-          description: je.memo || "Journal Entry",
+          description: l.memo || je.memo || "Journal Entry",
           amount: (parseFloat(l.debit)||0) - (parseFloat(l.credit)||0),
           debit:  parseFloat(l.debit)||0,
           credit: parseFloat(l.credit)||0,
@@ -3076,7 +3079,12 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
 
   // Determine debit/credit for a txn item based on account type
   const getDebitCredit = (item) => {
-    if (item.type==="je") return { debit: item.debit||0, credit: item.credit||0 };
+    if (item.type==="je") {
+      // For JEs, swap debit/credit so the contribution direction matches
+      // regular transactions. A JE credit to a liability = charge (increases
+      // what you owe), same as a negative-amount transaction.
+      return { debit: item.credit||0, credit: item.debit||0 };
+    }
     const acct = acctById[account.id];
     const isDebitNormal = acct && ["Asset","Expense"].includes(acct.type);
     if (isDebitNormal) {
