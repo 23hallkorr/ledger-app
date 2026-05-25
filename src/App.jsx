@@ -3942,11 +3942,25 @@ export default function FinanceApp() {
   const undoReconciliation = useCallback((histId)=>{
     const entry = reconHistory.find(h=>h.id===histId);
     if (!entry) return;
+    // Undo regular transactions
     setTransactions(prev=>prev.map(t=>{
       if (!entry.clearedIds.includes(t.id)) return t;
       const remaining = (t.reconciledAccts||[]).filter(a=>a!==entry.acctId);
       return {...t, reconciled:remaining.length>0, reconciledAccts:remaining};
     }));
+    // Undo JE lines — remove reconciledLines that were cleared in this entry
+    if (entry.jeLineIds?.length) {
+      setManualJEs(prev=>prev.map(je=>{
+        const toRemove = (entry.jeLineIds||[])
+          .filter(lid=>lid.startsWith(je.id+"::"))
+          .map(lid=>lid.slice(je.id.length+2));
+        if (!toRemove.length) return je;
+        return {
+          ...je,
+          reconciledLines: (je.reconciledLines||[]).filter(lid=>!toRemove.includes(lid))
+        };
+      }));
+    }
     setReconHistory(prev=>prev.filter(h=>h.id!==histId));
     setReconciliations(prev=>{
       const remaining = reconHistory.filter(h=>h.id!==histId&&h.acctId===entry.acctId);
