@@ -3789,7 +3789,6 @@ export default function FinanceApp() {
   };
 
   const syncPlaidAccountToSource = async (plaidAccountId, sourceId) => {
-    setPlaidSyncing(true);
     try {
       const res = await fetch(`${API}/api/plaid/sync`, {
         method:"POST", headers:{"Content-Type":"application/json"},
@@ -3812,8 +3811,6 @@ export default function FinanceApp() {
     } catch(e) {
       console.error("Sync failed:", e);
       return 0;
-    } finally {
-      setPlaidSyncing(false);
     }
   };
 
@@ -3843,18 +3840,25 @@ export default function FinanceApp() {
   };
 
   const syncAllPlaid = async () => {
-    let total = 0;
-    for (const pa of plaidAccounts) {
-      const sourceId = pa.mappedToId || pa.mappedTo || pa.plaidAccountId;
-      const count = await syncPlaidAccountToSource(pa.plaidAccountId, sourceId);
-      total += count || 0;
-    }
-    await fetchPlaidBalances();
-    if (total > 0) {
-      setTimeout(save, 3000);
-      alert(`Imported ${total} new transaction${total!==1?"s":""}. Saving…`);
-    } else {
-      alert("No new transactions found.");
+    setPlaidSyncing(true);
+    try {
+      // Sync all accounts in parallel instead of sequentially
+      const results = await Promise.all(
+        plaidAccounts.map(pa => {
+          const sourceId = pa.mappedToId || pa.mappedTo || pa.plaidAccountId;
+          return syncPlaidAccountToSource(pa.plaidAccountId, sourceId);
+        })
+      );
+      const total = results.reduce((sum, c) => sum + (c || 0), 0);
+      await fetchPlaidBalances();
+      if (total > 0) {
+        setTimeout(save, 3000);
+        alert(`Imported ${total} new transaction${total!==1?"s":""}. Saving…`);
+      } else {
+        alert("No new transactions found.");
+      }
+    } finally {
+      setPlaidSyncing(false);
     }
   };
 
