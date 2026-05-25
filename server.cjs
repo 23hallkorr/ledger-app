@@ -90,7 +90,6 @@ app.post("/api/plaid/sync", async (req, res) => {
       cursor   = data.next_cursor;
     }
     await prisma.plaidAccount.update({ where: { plaidAccountId }, data: { cursor } });
-    // Use mappedToId as sourceId so transactions appear under the correct COA account tab
     const sourceId = pa.mappedToId || plaidAccountId;
     const txns = added.map(t => ({
       id:          `plaid-${t.transaction_id}`,
@@ -129,7 +128,6 @@ app.get("/api/plaid/balances", async (req, res) => {
       where: { mappedToId: { not: null } },
       select: { plaidAccountId: true, mappedToId: true, accessToken: true },
     });
-
     const balances = [];
     for (const pa of accounts) {
       try {
@@ -159,10 +157,7 @@ app.get("/api/plaid/balances", async (req, res) => {
 app.post("/api/plaid/map", async (req, res) => {
   try {
     const { plaidAccountId, mappedToId } = req.body;
-    await prisma.plaidAccount.update({
-      where: { plaidAccountId },
-      data: { mappedToId },
-    });
+    await prisma.plaidAccount.update({ where: { plaidAccountId }, data: { mappedToId } });
     res.json({ ok: true });
   } catch (e) {
     console.error("Plaid map error:", e.message);
@@ -179,7 +174,7 @@ app.delete("/api/plaid/accounts/:plaidAccountId", async (req, res) => {
   }
 });
 
-// ── Go to https://ledger-app-production-6224.up.railway.app/api/reset-reconciliations? and enter Hurricane20! to reset reconciliations
+// ── Reset reconciliations ─────────────────────────────────────────────────────
 app.get("/api/reset-reconciliations", async (req, res) => {
   try {
     await prisma.$executeRawUnsafe(`UPDATE "Transaction" SET reconciled = false, "reconciledAccts" = '{}'`);
@@ -191,7 +186,7 @@ app.get("/api/reset-reconciliations", async (req, res) => {
   }
 });
 
-// ── One-time migration route — visit once then remove ────────────────────────
+// ── One-time migration ────────────────────────────────────────────────────────
 app.get("/api/run-migration", async (req, res) => {
   try {
     await prisma.$executeRawUnsafe(
@@ -206,13 +201,14 @@ app.get("/api/run-migration", async (req, res) => {
 // ── GET /api/data ─────────────────────────────────────────────────────────────
 app.get("/api/data", async (req, res) => {
   try {
-    // Run migration first (safe - IF NOT EXISTS)
+    // Ensure reconciledAccts column exists
     try {
       await prisma.$executeRawUnsafe(
         `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "reconciledAccts" TEXT[] DEFAULT '{}'`
       );
     } catch(migErr) { console.warn("Migration skipped:", migErr.message); }
 
+    // Fetch all tables in parallel
     const [transactions, accounts, sources, rules, manualJEs, reconciliationRows, settings] =
       await Promise.all([
         prisma.transaction.findMany(),
@@ -248,21 +244,18 @@ app.get("/api/data", async (req, res) => {
         id: a.id, name: a.name, type: a.type, cashFlow: a.cashFlow ?? null,
         isBankFeed: a.isBankFeed, parentId: a.parentId ?? null, inactive: a.inactive,
       })),
-      sources:      sources.map(s => ({ id: s.id, name: s.name })),
-      rules:        rules.map(r => ({ id: r.id, pattern: r.pattern, matchType: r.matchType, accountId: r.accountId })),
-      manualJEs:    manualJEs.map(je => ({ id: je.id, date: je.date, memo: je.memo, lines: je.lines })),
+      sources:   sources.map(s => ({ id: s.id, name: s.name })),
+      rules:     rules.map(r => ({ id: r.id, pattern: r.pattern, matchType: r.matchType, accountId: r.accountId })),
+      manualJEs: manualJEs.map(je => ({ id: je.id, date: je.date, memo: je.memo, lines: je.lines })),
       reconciliations,
       excludedTxns,
-      // Settings
       accountOrder:        settingMap["accountOrder"]        ?? null,
       reportNames:         settingMap["reportNames"]         ?? null,
       showCoaInactive:     settingMap["showCoaInactive"]     ?? false,
       reconHistory:        settingMap["reconHistory"]        ?? [],
-      // App theme
       appThemeMode:        settingMap["appThemeMode"]        ?? null,
       customAppLightTheme: settingMap["customAppLightTheme"] ?? null,
       customAppDarkTheme:  settingMap["customAppDarkTheme"]  ?? null,
-      // Report theme
       reportThemeMode:     settingMap["reportThemeMode"]     ?? null,
       customLightTheme:    settingMap["customLightTheme"]    ?? null,
       customDarkTheme:     settingMap["customDarkTheme"]     ?? null,
@@ -278,11 +271,8 @@ app.post("/api/data", async (req, res) => {
   const {
     transactions = [], accounts = [], sources = [], rules = [], manualJEs = [],
     reconciliations = {}, excludedTxns = [],
-    // Settings
     accountOrder, reportNames, showCoaInactive, reconHistory,
-    // App theme
     appThemeMode, customAppLightTheme, customAppDarkTheme,
-    // Report theme
     reportThemeMode, customLightTheme, customDarkTheme,
   } = req.body;
 
@@ -295,17 +285,22 @@ app.post("/api/data", async (req, res) => {
 
   try {
     const excludedSet = new Set(excludedTxns);
+    const t0 = Date.now();
 
-    await prisma.transaction.deleteMany();
-    await prisma.account.deleteMany();
-    await prisma.source.deleteMany();
-    await prisma.rule.deleteMany();
-    await prisma.manualJE.deleteMany();
-    await prisma.reconciliation.deleteMany();
+    // Delete all in parallel
+    await Promise.all([
+      prisma.transaction.deleteMany(),
+      prisma.account.deleteMany(),
+      prisma.source.deleteMany(),
+      prisma.rule.deleteMany(),
+      prisma.manualJE.deleteMany(),
+      prisma.reconciliation.deleteMany(),
+    ]);
 
-    for (const t of transactions) {
-      await prisma.transaction.create({
-        data: {
+    // Insert all in parallel using createMany (bulk insert — much faster)
+    await Promise.all([
+      prisma.transaction.createMany({
+        data: transactions.map(t => ({
           id: t.id, date: t.date || "", description: t.description || "",
           amount: t.amount ?? 0, accountId: t.accountId ?? null,
           sourceId: t.sourceId ?? null, transferMatchId: t.transferMatchId ?? null,
@@ -313,69 +308,65 @@ app.post("/api/data", async (req, res) => {
           reconciledAccts: Array.isArray(t.reconciledAccts) ? t.reconciledAccts : [],
           excluded: excludedSet.has(t.id),
           splits: t.splits ?? undefined,
-        },
-      });
-    }
+        })),
+      }),
 
-    for (let idx = 0; idx < accounts.length; idx++) {
-      const a = accounts[idx];
-      await prisma.account.create({
-        data: {
+      prisma.account.createMany({
+        data: accounts.map((a, idx) => ({
           id: a.id, name: a.name, type: a.type, cashFlow: a.cashFlow ?? null,
           isBankFeed: a.isBankFeed ?? false, parentId: a.parentId ?? null,
           inactive: a.inactive ?? false,
           sortOrder: accountOrder
             ? (accountOrder.indexOf(a.id) >= 0 ? accountOrder.indexOf(a.id) : idx)
             : idx,
-        },
-      });
-    }
+        })),
+      }),
 
-    for (const s of sources) {
-      await prisma.source.create({ data: { id: s.id, name: s.name } });
-    }
+      prisma.source.createMany({
+        data: sources.map(s => ({ id: s.id, name: s.name })),
+      }),
 
-    for (const r of rules) {
-      await prisma.rule.create({
-        data: { id: String(r.id), pattern: r.pattern, matchType: r.matchType, accountId: r.accountId },
-      });
-    }
+      prisma.rule.createMany({
+        data: rules.map(r => ({
+          id: String(r.id), pattern: r.pattern,
+          matchType: r.matchType, accountId: r.accountId,
+        })),
+      }),
 
-    for (const je of manualJEs) {
-      await prisma.manualJE.create({
-        data: { id: je.id, date: je.date || "", memo: je.memo || "", lines: je.lines },
-      });
-    }
+      prisma.manualJE.createMany({
+        data: manualJEs.map(je => ({
+          id: je.id, date: je.date || "", memo: je.memo || "", lines: je.lines,
+        })),
+      }),
 
-    for (const [accountId, r] of Object.entries(reconciliations)) {
-      await prisma.reconciliation.create({
-        data: { accountId, lastDate: r.lastDate, lastBalance: r.lastBalance },
-      });
-    }
+      prisma.reconciliation.createMany({
+        data: Object.entries(reconciliations).map(([accountId, r]) => ({
+          accountId, lastDate: r.lastDate, lastBalance: r.lastBalance,
+        })),
+      }),
+    ]);
 
-    const upsert = async (key, value) => {
-      await prisma.setting.upsert({
-        where:  { key },
-        update: { value: value ?? null },
-        create: { key, value: value ?? null },
-      });
-    };
+    // Upsert settings in parallel
+    const upsert = (key, value) => prisma.setting.upsert({
+      where:  { key },
+      update: { value: value ?? null },
+      create: { key, value: value ?? null },
+    });
 
-    // Settings
-    await upsert("accountOrder",        accountOrder);
-    await upsert("reportNames",         reportNames);
-    await upsert("showCoaInactive",     showCoaInactive);
-    await upsert("reconHistory",        reconHistory ?? []);
-    // App theme
-    await upsert("appThemeMode",        appThemeMode        ?? null);
-    await upsert("customAppLightTheme", customAppLightTheme ?? null);
-    await upsert("customAppDarkTheme",  customAppDarkTheme  ?? null);
-    // Report theme
-    await upsert("reportThemeMode",     reportThemeMode     ?? null);
-    await upsert("customLightTheme",    customLightTheme    ?? null);
-    await upsert("customDarkTheme",     customDarkTheme     ?? null);
+    await Promise.all([
+      upsert("accountOrder",        accountOrder),
+      upsert("reportNames",         reportNames),
+      upsert("showCoaInactive",     showCoaInactive),
+      upsert("reconHistory",        reconHistory ?? []),
+      upsert("appThemeMode",        appThemeMode        ?? null),
+      upsert("customAppLightTheme", customAppLightTheme ?? null),
+      upsert("customAppDarkTheme",  customAppDarkTheme  ?? null),
+      upsert("reportThemeMode",     reportThemeMode     ?? null),
+      upsert("customLightTheme",    customLightTheme    ?? null),
+      upsert("customDarkTheme",     customDarkTheme     ?? null),
+    ]);
 
-    console.log(`  POST /api/data DONE`);
+    console.log(`  POST /api/data DONE in ${Date.now()-t0}ms`);
     res.json({ ok: true });
   } catch (e) {
     console.error("POST /api/data error:", e);
