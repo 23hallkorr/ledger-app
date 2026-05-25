@@ -3080,10 +3080,12 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   // Determine debit/credit for a txn item based on account type
   const getDebitCredit = (item) => {
     if (item.type==="je") {
-      // For JEs, swap debit/credit so the contribution direction matches
-      // regular transactions. A JE credit to a liability = charge (increases
-      // what you owe), same as a negative-amount transaction.
-      return { debit: item.credit||0, credit: item.debit||0 };
+      // For liability accounts, swap debit/credit so JE credits contribute
+      // negatively (same direction as charges). For asset accounts, keep as-is.
+      if (!isDebitNormal) {
+        return { debit: item.credit||0, credit: item.debit||0 };
+      }
+      return { debit: item.debit||0, credit: item.credit||0 };
     }
     const acct = acctById[account.id];
     const isDebitNormal = acct && ["Asset","Expense"].includes(acct.type);
