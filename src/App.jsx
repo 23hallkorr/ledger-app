@@ -280,17 +280,17 @@ const styles = `
   .bank-card.active .bank-card-updated{color:rgba(0,0,0,.5);}
   .bank-card.active .bank-card-check{color:#0f0f11;}
   .bank-card-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;}
-  .bank-card-name{font-size:12px;font-weight:600;color:var(--text);line-height:1.3;flex:1;margin-right:6px;}
+  .bank-card-name{font-size:15px;font-weight:600;color:var(--text);line-height:1.3;flex:1;margin-right:6px;}
   .bank-card-icons{display:flex;gap:4px;align-items:center;flex-shrink:0;}
-  .bank-card-icon{font-size:13px;color:var(--text3);cursor:pointer;padding:1px 3px;border-radius:3px;}
+  .bank-card-icon{font-size:16px;color:var(--text3);cursor:pointer;padding:1px 3px;border-radius:3px;}
   .bank-card-icon:hover{color:var(--text);}
   .bank-card-section{margin-bottom:8px;}
-  .bank-card-amount{font-family:'DM Mono',monospace;font-size:18px;font-weight:700;color:var(--text);line-height:1;}
-  .bank-card-label{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);font-family:'DM Mono',monospace;margin-top:2px;}
-  .bank-card-updated{font-size:9px;color:var(--text3);margin-top:1px;}
+  .bank-card-amount{font-family:'DM Mono',monospace;font-size:24px;font-weight:700;color:var(--text);line-height:1;}
+  .bank-card-label{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);font-family:'DM Mono',monospace;margin-top:2px;}
+  .bank-card-updated{font-size:11px;color:var(--text3);margin-top:1px;}
   .bank-card-divider{height:1px;background:var(--border);margin:8px 0;}
-  .bank-card-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-family:'DM Mono',monospace;padding:2px 6px;border-radius:8px;background:rgba(251,191,36,.15);color:var(--amber);font-weight:600;}
-  .bank-card-check{font-size:14px;color:var(--green);}
+  .bank-card-badge{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-family:'DM Mono',monospace;padding:2px 6px;border-radius:8px;background:rgba(251,191,36,.15);color:var(--amber);font-weight:600;}
+  .bank-card-check{font-size:17px;color:var(--green);}
   .bank-card-footer{display:flex;align-items:center;justify-content:space-between;}
 
   /* Section divider */
@@ -4649,7 +4649,7 @@ export default function FinanceApp() {
                               ? <span className="bank-card-badge">{unc} to review</span>
                               : <span className="bank-card-check">✓</span>
                             }
-                            {hasPlaid && bankBal !== null && inSync && <span className="bank-card-check" style={{fontSize:11,marginLeft:4}}>✓ Synced</span>}
+
                           </div>
                         </div>
                       );
