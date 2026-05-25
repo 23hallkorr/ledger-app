@@ -179,8 +179,9 @@ app.delete("/api/plaid/accounts/:plaidAccountId", async (req, res) => {
   }
 });
 
-// ── Reset reconciliations — visit once then remove ───────────────────────────
+// ── Go to https://ledger-app-production-6224.up.railway.app/api/reset-reconciliations? and enter Hurricane20! to reset reconciliations
 app.get("/api/reset-reconciliations", async (req, res) => {
+  if (req.query.key !== "Hurricane20!") return res.status(403).json({ error: "Forbidden" });
   try {
     await prisma.$executeRawUnsafe(`UPDATE "Transaction" SET reconciled = false, "reconciledAccts" = '{}'`);
     await prisma.$executeRawUnsafe(`DELETE FROM "Reconciliation"`);
