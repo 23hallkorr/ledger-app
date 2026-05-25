@@ -2094,6 +2094,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
   const [search,        setSearch]        = useState("");
   const [section,       setSection]       = useState("uncategorized");
   const [currentPage,   setCurrentPage]   = useState(1);
+  const [pageSize,      setPageSize]      = useState(25);
   const [showBulkModal,     setShowBulkModal]     = useState(false);
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
   const [confirmBulkDel,    setConfirmBulkDel]    = useState(false);
@@ -2160,9 +2161,9 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
     });
   },[pool,search,sortKey,sortDir,filterDateFrom,filterDateTo,filterRecon]);
 
-  const totalPages = Math.max(1,Math.ceil(filtered.length/PAGE_SIZE));
+  const totalPages = Math.max(1,Math.ceil(filtered.length/pageSize));
   const pg = Math.min(currentPage,totalPages);
-  const paged = filtered.slice((pg-1)*PAGE_SIZE, pg*PAGE_SIZE);
+  const paged = filtered.slice((pg-1)*pageSize, pg*pageSize);
   const allPageSelected = paged.length>0 && paged.every(t=>selected.has(t.id));
 
   const [lastCheckedIdx, setLastCheckedIdx] = useState(null);
@@ -2227,7 +2228,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
     if (next) {
       // Jump to the page that contains the next item
       const nextPosInAll = available.indexOf(next);
-      const targetPage = Math.floor(nextPosInAll / PAGE_SIZE) + 1;
+      const targetPage = Math.floor(nextPosInAll / pageSize) + 1;
       setCurrentPage(targetPage);
     }
   };
@@ -2584,6 +2585,13 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
             </div>
             <div className="pagination">
               <span className="page-info">{filtered.length} transactions</span>
+              <select value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setCurrentPage(1);}}
+                style={{fontSize:12,padding:"3px 8px",background:"var(--surface2)",border:"1px solid var(--border)",borderRadius:6,color:"var(--text)"}}>
+                <option value={25}>25 rows</option>
+                <option value={50}>50 rows</option>
+                <option value={100}>100 rows</option>
+                <option value={200}>200 rows</option>
+              </select>
               <button className="btn btn-ghost btn-sm" disabled={pg===1} onClick={()=>setCurrentPage(p=>p-1)}>←</button>
               <span className="page-info">Page {pg} / {totalPages}</span>
               <button className="btn btn-ghost btn-sm" disabled={pg>=totalPages} onClick={()=>setCurrentPage(p=>p+1)}>→</button>
