@@ -3007,7 +3007,7 @@ function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete })
 // ─────────────────────────────────────────────────────────────────────────────
 // RECONCILIATION MODAL
 // ─────────────────────────────────────────────────────────────────────────────
-function ReconcileModal({ account, transactions, manualJEs, accounts, reconHistory, onUndo, onComplete, onUpdate, onClose }) {
+function ReconcileModal({ account, transactions, manualJEs, accounts, reconHistory, reconciliations, onUndo, onComplete, onUpdate, onClose }) {
   const [endBalance,   setEndBalance]   = useState("");
   const [endDate,      setEndDate]      = useState(()=>new Date().toISOString().slice(0,10));
   const [includeAfter, setIncludeAfter] = useState(false);
@@ -3101,10 +3101,17 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   };
 
   const isDebitNormal = acct && ["Asset","Expense"].includes(acct.type);
+
+  // Starting balance from last reconciliation
+  const lastRecon = reconciliations?.[account.id];
+  const lastBalance = parseFloat(lastRecon?.lastBalance || 0);
+  // Convert lastBalance to internal sign convention
+  const startingBalance = isDebitNormal ? lastBalance : -lastBalance;
+
   const clearedTotal = allItems.filter(i=>cleared.has(i.id)).reduce((s,i)=>{
     const {debit,credit} = getDebitCredit(i);
     return isDebitNormal ? s + debit - credit : s + credit - debit;
-  },0);
+  }, startingBalance);
   // For liability/credit card accounts, the user enters a positive statement balance
   // (e.g. "500" meaning you owe $500), so we negate it internally to match the sign convention
   const endBal = isDebitNormal
@@ -3129,6 +3136,12 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
         <div className="modal-title">Reconcile — {account.name}</div>
+        {lastRecon && (
+          <div style={{display:"flex",justifyContent:"space-between",background:"var(--surface2)",borderRadius:6,padding:"8px 12px",marginBottom:12,fontSize:12}}>
+            <span style={{color:"var(--text3)"}}>Last reconciled</span>
+            <span style={{fontFamily:"DM Mono,monospace",color:"var(--text2)"}}>{lastRecon.lastDate} — <strong>{fmt(lastRecon.lastBalance)}</strong></span>
+          </div>
+        )}
         <div className="field"><label>Statement Ending Date</label>
           <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}/>
         </div>
@@ -5126,7 +5139,7 @@ export default function FinanceApp() {
       {showRuleModal    && <RuleModal    rule={modalRule}        accounts={activeAccounts}   onSave={saveRule}    onClose={()=>{setShowRuleModal(false);setModalRule(null);}}/>}
       {reconAccount     && <ReconcileModal account={reconAccount} transactions={transactions}
         manualJEs={manualJEs} accounts={accounts}
-        reconHistory={reconHistory}
+        reconHistory={reconHistory} reconciliations={reconciliations}
         onUndo={undoReconciliation}
         onUpdate={(id,fields)=>setTransactions(prev=>prev.map(t=>t.id===id?{...t,...fields}:t))}
         onComplete={completeReconciliation} onClose={()=>setReconAccount(null)}/>}
