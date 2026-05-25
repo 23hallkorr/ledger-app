@@ -196,7 +196,10 @@ app.get("/api/run-migration", async (req, res) => {
     await prisma.$executeRawUnsafe(
       `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "reconciledAccts" TEXT[] DEFAULT '{}'`
     );
-    res.json({ ok: true, message: "Column added successfully" });
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "ManualJE" ADD COLUMN IF NOT EXISTS "reconciledLines" TEXT[] DEFAULT '{}'`
+    );
+    res.json({ ok: true, message: "Columns added successfully" });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -205,10 +208,13 @@ app.get("/api/run-migration", async (req, res) => {
 // ── GET /api/data ─────────────────────────────────────────────────────────────
 app.get("/api/data", async (req, res) => {
   try {
-    // Ensure reconciledAccts column exists
+    // Ensure required columns exist
     try {
       await prisma.$executeRawUnsafe(
         `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "reconciledAccts" TEXT[] DEFAULT '{}'`
+      );
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "ManualJE" ADD COLUMN IF NOT EXISTS "reconciledLines" TEXT[] DEFAULT '{}'`
       );
     } catch(migErr) { console.warn("Migration skipped:", migErr.message); }
 
@@ -250,7 +256,7 @@ app.get("/api/data", async (req, res) => {
       })),
       sources:   sources.map(s => ({ id: s.id, name: s.name })),
       rules:     rules.map(r => ({ id: r.id, pattern: r.pattern, matchType: r.matchType, accountId: r.accountId })),
-      manualJEs: manualJEs.map(je => ({ id: je.id, date: je.date, memo: je.memo, lines: je.lines })),
+      manualJEs: manualJEs.map(je => ({ id: je.id, date: je.date, memo: je.memo, lines: je.lines, reconciledLines: je.reconciledLines ?? [] })),
       reconciliations,
       excludedTxns,
       accountOrder:        settingMap["accountOrder"]        ?? null,
@@ -340,6 +346,7 @@ app.post("/api/data", async (req, res) => {
       prisma.manualJE.createMany({
         data: manualJEs.map(je => ({
           id: je.id, date: je.date || "", memo: je.memo || "", lines: je.lines,
+          reconciledLines: Array.isArray(je.reconciledLines) ? je.reconciledLines : [],
         })),
       }),
 

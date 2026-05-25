@@ -46,10 +46,11 @@ model Rule {
 }
 
 model ManualJE {
-  id    String @id
-  date  String
-  memo  String
-  lines Json
+  id              String   @id
+  date            String
+  memo            String
+  lines           Json
+  reconciledLines String[] @default([])
 }
 
 model Reconciliation {
