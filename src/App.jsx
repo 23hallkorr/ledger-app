@@ -2126,10 +2126,12 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
     if (!sourceAccount || !manualJEs?.length) return [];
     return manualJEs.flatMap(je=>
       je.lines
+        .map((l, li) => ({...l, _lineIndex: li}))
         .filter(l=>l.accountId===sourceAccount.id)
         .map(l=>{
           const dr=parseFloat(l.debit)||0, cr=parseFloat(l.credit)||0;
-          const lineId = l.id||l.accountId;
+          // Use same ID scheme as reconciliation register: id||index
+          const lineId = l.id||l._lineIndex;
           const isReconciled = (je.reconciledLines||[]).includes(String(lineId));
           return {
             id: `je-${je.id}-${lineId}`,
@@ -3038,7 +3040,9 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
       .filter(t=>{
         // Only exclude if THIS account specifically reconciled it
         if (!t.reconciled) return true;
-        if (!t.reconciledAccts) return !t.reconciled; // legacy
+        // Legacy: no reconciledAccts means we can't tell which account reconciled it
+        // Include it so it can be properly reconciled again
+        if (!t.reconciledAccts || t.reconciledAccts.length === 0) return true;
         return !t.reconciledAccts.includes(account.id);
       })
       .filter(t=>{ if(!t.date) return true; const nd=normDate(t.date); return nd<=endDate||(includeAfter&&nd>endDate); })
@@ -3946,6 +3950,8 @@ export default function FinanceApp() {
     setTransactions(prev=>prev.map(t=>{
       if (!entry.clearedIds.includes(t.id)) return t;
       const remaining = (t.reconciledAccts||[]).filter(a=>a!==entry.acctId);
+      // Always set reconciled:false if this account was the reconciler,
+      // even for legacy transactions without reconciledAccts
       return {...t, reconciled:remaining.length>0, reconciledAccts:remaining};
     }));
     // Undo JE lines — remove reconciledLines that were cleared in this entry
