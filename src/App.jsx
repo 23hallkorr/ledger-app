@@ -3130,17 +3130,10 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
 
   const manualReconBalance = manualTxns.reduce((s, t) => {
       const amt = t.accountId===account.id && t.sourceId!==account.id ? -t.amount : t.amount;
-      let contribution;
-      if (isDebitNormal) {
-        const dr = amt >= 0 ? Math.abs(amt) : 0;
-        const cr = amt < 0  ? Math.abs(amt) : 0;
-        contribution = dr - cr;
-      } else {
-        const dr = amt < 0  ? Math.abs(amt) : 0;
-        const cr = amt >= 0 ? Math.abs(amt) : 0;
-        contribution = cr - dr;
-      }
-      console.log(`manualRecon txn: amount=${t.amount} amt=${amt} contribution=${contribution} running=${s+contribution} displayBalance=${-(s+contribution+priorBalance)}`);
+      // For both asset and liability: charge = negative contribution to internal balance
+      // This matches how clearedTotal accumulates (charges make it more negative)
+      // so the displayed beginning balance increases correctly
+      const contribution = -amt;
       return s + contribution;
     }, 0);
 
