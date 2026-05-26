@@ -182,6 +182,7 @@ app.delete("/api/plaid/accounts/:plaidAccountId", async (req, res) => {
 app.get("/api/reset-reconciliations", async (req, res) => {
   try {
     await prisma.$executeRawUnsafe(`UPDATE "Transaction" SET reconciled = false, "reconciledAccts" = '{}'`);
+    await prisma.$executeRawUnsafe(`UPDATE "ManualJE" SET "reconciledLines" = '{}'`);
     await prisma.$executeRawUnsafe(`DELETE FROM "Reconciliation"`);
     await prisma.setting.deleteMany({ where: { key: "reconHistory" } });
     res.json({ ok: true, message: "All reconciliations cleared" });

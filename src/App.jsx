@@ -2414,10 +2414,12 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                     const displayAcct = isCounterpart ? acctById[t.sourceId] : catAcct;
                     // R badge: show if this account reconciled it
                     const _acctId = sourceAccount?.id || t.sourceId;
-                    const showR = (
-                      (t.reconciledAccts||[]).includes(_acctId) ||
-                      (t.reconciled && (!t.reconciledAccts || t.reconciledAccts.length===0) && t.sourceId===_acctId)
-                    );
+                    const showR = t.isJE
+                      ? t.reconciled // JE reconciled state set by jeRows useMemo
+                      : (
+                          (t.reconciledAccts||[]).includes(_acctId) ||
+                          (t.reconciled && (!t.reconciledAccts || t.reconciledAccts.length===0) && t.sourceId===_acctId)
+                        );
 
                     return (
                       <tr key={t.id}
@@ -4035,19 +4037,34 @@ export default function FinanceApp() {
 
   const manualReconcile = useCallback((txn, acctId) => {
     if (!acctId) return;
-    setTransactions(prev => prev.map(t => {
-      if (t.id !== txn.id) return t;
-      const accts = t.reconciledAccts || [];
-      const isReconciled = accts.includes(acctId) || (t.reconciled && accts.length === 0);
-      if (isReconciled) {
-        // Unreconcile: remove this acct, and if legacy (no reconciledAccts), set reconciled false
-        const remaining = accts.filter(a => a !== acctId);
-        return {...t, reconciled: remaining.length > 0, reconciledAccts: remaining};
-      } else {
-        const updated = [...new Set([...accts, acctId])];
-        return {...t, reconciled: true, reconciledAccts: updated};
-      }
-    }));
+    if (txn.isJE) {
+      // JE rows: toggle reconciledLines on the parent JE
+      setManualJEs(prev => prev.map(je => {
+        if (je.id !== txn.jeId) return je;
+        const lid = String(txn.jeLineId);
+        const lines = je.reconciledLines || [];
+        const isReconciled = lines.includes(lid);
+        return {
+          ...je,
+          reconciledLines: isReconciled
+            ? lines.filter(l => l !== lid)
+            : [...new Set([...lines, lid])],
+        };
+      }));
+    } else {
+      setTransactions(prev => prev.map(t => {
+        if (t.id !== txn.id) return t;
+        const accts = t.reconciledAccts || [];
+        const isReconciled = accts.includes(acctId) || (t.reconciled && accts.length === 0);
+        if (isReconciled) {
+          const remaining = accts.filter(a => a !== acctId);
+          return {...t, reconciled: remaining.length > 0, reconciledAccts: remaining};
+        } else {
+          const updated = [...new Set([...accts, acctId])];
+          return {...t, reconciled: true, reconciledAccts: updated};
+        }
+      }));
+    }
     setTimeout(save, 100);
   }, [save]);
 
