@@ -3023,7 +3023,17 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   const [endDate,      setEndDate]      = useState(()=>new Date().toISOString().slice(0,10));
   const [includeAfter, setIncludeAfter] = useState(false);
   const [step,         setStep]         = useState(1);
-  const [cleared,      setCleared]      = useState(new Set());
+  const [cleared, setCleared] = useState(() => {
+    // Pre-check any transactions already manually reconciled for this account
+    const preCleared = new Set();
+    transactions.forEach(t => {
+      if (!t.accountId) return;
+      if (!(t.sourceId===account.id || t.accountId===account.id)) return;
+      const accts = t.reconciledAccts || [];
+      if (accts.includes(account.id)) preCleared.add(t.id);
+    });
+    return preCleared;
+  });
   const [editingId,    setEditingId]    = useState(null);
   const [editFields,   setEditFields]   = useState({});
 
@@ -3121,31 +3131,10 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   // Convert lastBalance to internal sign convention
   const startingBalance = isDebitNormal ? lastBalance : -lastBalance;
 
-  // Add manually reconciled transactions (reconciledAccts includes this account
-  // but they are NOT in the current allItems since they're already filtered out)
-  const manuallyReconciledTotal = transactions
-    .filter(t => {
-      if (!(t.sourceId===account.id || t.accountId===account.id)) return false;
-      if (!t.accountId) return false;
-      if (!t.reconciled) return false;
-      const accts = t.reconciledAccts || [];
-      return accts.length === 0
-        ? t.reconciled  // legacy
-        : accts.includes(account.id);
-    })
-    .reduce((s, t) => {
-      const amt = t.accountId===account.id && t.sourceId!==account.id ? -t.amount : t.amount;
-      const {debit, credit} = (() => {
-        if (isDebitNormal) return amt >= 0 ? {debit:Math.abs(amt),credit:0} : {debit:0,credit:Math.abs(amt)};
-        return amt >= 0 ? {debit:0,credit:Math.abs(amt)} : {debit:Math.abs(amt),credit:0};
-      })();
-      return isDebitNormal ? s + debit - credit : s + credit - debit;
-    }, 0);
-
   const clearedTotal = allItems.filter(i=>cleared.has(i.id)).reduce((s,i)=>{
     const {debit,credit} = getDebitCredit(i);
     return isDebitNormal ? s + debit - credit : s + credit - debit;
-  }, startingBalance + manuallyReconciledTotal);
+  }, startingBalance);
   // For liability/credit card accounts, the user enters a positive statement balance
   // (e.g. "500" meaning you owe $500), so we negate it internally to match the sign convention
   const endBal = isDebitNormal
@@ -3170,12 +3159,10 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
         <div className="modal-title">Reconcile — {account.name}</div>
-        {lastRecon && (
-          <div style={{display:"flex",justifyContent:"space-between",background:"var(--surface2)",borderRadius:6,padding:"8px 12px",marginBottom:12,fontSize:12}}>
-            <span style={{color:"var(--text3)"}}>Last reconciled</span>
-            <span style={{fontFamily:"DM Mono,monospace",color:"var(--text2)"}}>{lastRecon.lastDate} — <strong>{fmt(lastRecon.lastBalance)}</strong></span>
-          </div>
-        )}
+        <div style={{display:"flex",justifyContent:"space-between",background:"var(--surface2)",borderRadius:6,padding:"8px 12px",marginBottom:12,fontSize:12}}>
+          <span style={{color:"var(--text3)"}}>Beginning Balance</span>
+          <span style={{fontFamily:"DM Mono,monospace",color:"var(--text)",fontWeight:700}}>{lastRecon ? fmt(lastRecon.lastBalance) : fmt(0)}</span>
+        </div>
         <div className="field"><label>Statement Ending Date</label>
           <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}/>
         </div>
