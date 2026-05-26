@@ -3024,13 +3024,24 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   const [includeAfter, setIncludeAfter] = useState(false);
   const [step,         setStep]         = useState(1);
   const [cleared, setCleared] = useState(() => {
-    // Pre-check any transactions already manually reconciled for this account
+    // Pre-check any transactions already reconciled for this account
     const preCleared = new Set();
     transactions.forEach(t => {
       if (!t.accountId) return;
       if (!(t.sourceId===account.id || t.accountId===account.id)) return;
       const accts = t.reconciledAccts || [];
-      if (accts.includes(account.id)) preCleared.add(t.id);
+      if (accts.length === 0 && t.reconciled) preCleared.add(t.id); // legacy
+      else if (accts.includes(account.id)) preCleared.add(t.id);
+    });
+    // Pre-check reconciled JE lines
+    (manualJEs||[]).forEach(je => {
+      (je.lines||[]).forEach((l, li) => {
+        if (l.accountId !== account.id) return;
+        const lid = String(l.id||li);
+        if ((je.reconciledLines||[]).includes(lid)) {
+          preCleared.add(`${je.id}::${lid}`);
+        }
+      });
     });
     return preCleared;
   });
@@ -3056,14 +3067,6 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   const allItems = useMemo(()=>{
     const txnItems = transactions
       .filter(t=>(t.sourceId===account.id||t.accountId===account.id) && t.accountId)
-      .filter(t=>{
-        // Only exclude if THIS account specifically reconciled it
-        if (!t.reconciled) return true;
-        // Legacy: no reconciledAccts means we can't tell which account reconciled it
-        // Include it so it can be properly reconciled again
-        if (!t.reconciledAccts || t.reconciledAccts.length === 0) return true;
-        return !t.reconciledAccts.includes(account.id);
-      })
       .filter(t=>{ if(!t.date) return true; const nd=normDate(t.date); return nd<=endDate||(includeAfter&&nd>endDate); })
       .map(t=>({
         id: t.id,
@@ -3083,7 +3086,7 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
       .flatMap(je => je.lines
         .map((l, li) => ({...l, _lineIndex: li}))
         .filter(l=>l.accountId===account.id)
-        .filter(l=>{ const lid=String(l.id||l._lineIndex); return !(je.reconciledLines||[]).includes(lid); })
+
         .map(l => ({
           id: `${je.id}::${l.id||l._lineIndex}`,
           type: "je",
