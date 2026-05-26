@@ -2412,13 +2412,14 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                     const isCounterpart = sourceAccount && t.accountId===sourceAccount.id && t.sourceId!==sourceAccount.id;
                     // The category to display — if counterpart, show the source account; else show category
                     const displayAcct = isCounterpart ? acctById[t.sourceId] : catAcct;
-                    // R badge: show if this account reconciled it
+                    // R badge: show if this account reconciled it (formally or manually)
                     const _acctId = sourceAccount?.id || t.sourceId;
                     const showR = t.isJE
-                      ? t.reconciled // JE reconciled state set by jeRows useMemo
+                      ? t.reconciled
                       : (
                           (t.reconciledAccts||[]).includes(_acctId) ||
-                          (t.reconciled && (!t.reconciledAccts || t.reconciledAccts.length===0) && t.sourceId===_acctId)
+                          (t.reconciled && (!t.reconciledAccts || t.reconciledAccts.length===0) && t.sourceId===_acctId) ||
+                          (manualRecons[_acctId]||[]).includes(t.id)
                         );
 
                     return (
@@ -3020,7 +3021,7 @@ function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete })
 // ─────────────────────────────────────────────────────────────────────────────
 // RECONCILIATION MODAL
 // ─────────────────────────────────────────────────────────────────────────────
-function ReconcileModal({ account, transactions, manualJEs, accounts, reconHistory, reconciliations, onUndo, onComplete, onUpdate, onClose }) {
+function ReconcileModal({ account, transactions, manualJEs, accounts, reconHistory, reconciliations, manualRecons, onUndo, onComplete, onUpdate, onClose }) {
   const [endBalance,   setEndBalance]   = useState("");
   const [endDate,      setEndDate]      = useState(()=>new Date().toISOString().slice(0,10));
   const [includeAfter, setIncludeAfter] = useState(false);
@@ -3049,6 +3050,8 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
     const txnItems = transactions
       .filter(t=>(t.sourceId===account.id||t.accountId===account.id) && t.accountId)
       .filter(t=>{
+        // Hide if manually reconciled via toggle
+        if ((manualRecons[account.id]||[]).includes(t.id)) return false;
         if (!t.reconciled) return true;
         if (!t.reconciledAccts || t.reconciledAccts.length === 0) return !t.reconciled;
         return !t.reconciledAccts.includes(account.id);
@@ -3118,19 +3121,11 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   // Convert lastBalance to internal sign convention
   const priorBalance = isDebitNormal ? lastBalance : -lastBalance;
 
-  // Transactions formally reconciled in prior reconciliation sessions
-  const formallyReconciledIds = new Set(
-    (reconHistory||[])
-      .filter(h => h.acctId === account.id)
-      .flatMap(h => h.clearedIds||[])
-  );
-
-  // Add manually reconciled transactions (in reconciledAccts but NOT in any formal reconciliation)
+  // Add manually reconciled transactions (toggled via R button, stored in manualRecons)
   const manualTxns = transactions
     .filter(t => {
       if (!(t.sourceId===account.id || t.accountId===account.id) || !t.accountId) return false;
-      if (!(t.reconciledAccts||[]).includes(account.id)) return false;
-      return !formallyReconciledIds.has(t.id);
+      return (manualRecons[account.id]||[]).includes(t.id);
     });
 
   const manualReconBalance = manualTxns.reduce((s, t) => {
@@ -3152,7 +3147,6 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
       }
     }, 0);
 
-  console.log("ReconcileModal:", {acctId:account.id, isDebitNormal, priorBalance, manualReconBalance, startingBalance: priorBalance+manualReconBalance, manualTxnsCount:manualTxns.length, manualTxns:manualTxns.map(t=>({id:t.id,amount:t.amount,reconciledAccts:t.reconciledAccts}))});
   const startingBalance = priorBalance + manualReconBalance;
 
   const clearedTotal = allItems.filter(i=>cleared.has(i.id)).reduce((s,i)=>{
@@ -3647,6 +3641,7 @@ export default function FinanceApp() {
   const [coaDrillAccount, setCoaDrillAccount] = useState(null);
   const [trendDrillPeriod,setTrendDrillPeriod]= useState(null);
   const [plaidAccounts,   setPlaidAccounts]   = useState([]);
+  const [manualRecons,    setManualRecons]    = useState({}); // {acctId: [txnId,...]}
   const [plaidSyncing,    setPlaidSyncing]    = useState(false);
   const [bankBalances,    setBankBalances]    = useState({}); // {[sourceId]: {current, available, updatedAt}}
   const [syncErrors,      setSyncErrors]      = useState({}); // {[plaidAccountId]: errorCode}
@@ -3693,7 +3688,7 @@ export default function FinanceApp() {
     stateRef.current = {
       transactions, accounts, sources, rules, manualJEs,
       accountOrder, reportNames, reconciliations, reconHistory,
-      appThemeMode, customAppLightTheme, customAppDarkTheme,
+      appThemeMode, customAppLightTheme, customAppDarkTheme, manualRecons,
       showCoaInactive, excludedTxns: [...excludedTxns],
       customLightTheme, customDarkTheme, reportThemeMode,
     };
@@ -4037,8 +4032,7 @@ export default function FinanceApp() {
   };
 
   const manualReconcile = useCallback((txn, acctId) => {
-    console.log("manualReconcile:", {id:txn.id, acctId, isJE:txn.isJE, currentAccts:txn.reconciledAccts, reconciled:txn.reconciled});
-    if (!acctId) { console.warn("NO ACCTID"); return; }
+    if (!acctId) return;
     if (txn.isJE) {
       // JE rows: toggle reconciledLines on the parent JE
       setManualJEs(prev => prev.map(je => {
@@ -4054,18 +4048,16 @@ export default function FinanceApp() {
         };
       }));
     } else {
-      setTransactions(prev => prev.map(t => {
-        if (t.id !== txn.id) return t;
-        const accts = t.reconciledAccts || [];
-        const isReconciled = accts.includes(acctId) || (t.reconciled && accts.length === 0);
-        if (isReconciled) {
-          const remaining = accts.filter(a => a !== acctId);
-          return {...t, reconciled: remaining.length > 0, reconciledAccts: remaining};
-        } else {
-          const updated = [...new Set([...accts, acctId])];
-          return {...t, reconciled: true, reconciledAccts: updated};
-        }
-      }));
+      setManualRecons(prev => {
+        const current = prev[acctId] || [];
+        const isReconciled = current.includes(txn.id);
+        return {
+          ...prev,
+          [acctId]: isReconciled
+            ? current.filter(id => id !== txn.id)
+            : [...new Set([...current, txn.id])],
+        };
+      });
     }
     setTimeout(save, 100);
   }, [save]);
@@ -4346,6 +4338,7 @@ export default function FinanceApp() {
               try { localStorage.setItem("ledger_data", JSON.stringify({...d, reconHistory: history})); } catch(e) {}
             }
           }
+          if (d.manualRecons)          setManualRecons(d.manualRecons);
           if (d.appThemeMode)          setAppThemeMode(d.appThemeMode);
           if (d.customAppLightTheme)   setCustomAppLightTheme(d.customAppLightTheme);
           if (d.customAppDarkTheme)    setCustomAppDarkTheme(d.customAppDarkTheme);
@@ -4385,7 +4378,8 @@ export default function FinanceApp() {
                 try { localStorage.setItem("ledger_data", JSON.stringify({...d, reconHistory: history})); } catch(e) {}
               }
             }
-            if (d.appThemeMode)          setAppThemeMode(d.appThemeMode);
+            if (d.manualRecons)          setManualRecons(d.manualRecons);
+          if (d.appThemeMode)          setAppThemeMode(d.appThemeMode);
             if (d.customAppLightTheme)   setCustomAppLightTheme(d.customAppLightTheme);
             if (d.customAppDarkTheme)    setCustomAppDarkTheme(d.customAppDarkTheme);
             if (d.showCoaInactive !== undefined) setShowCoaInactive(d.showCoaInactive);
@@ -5264,6 +5258,7 @@ export default function FinanceApp() {
       {reconAccount     && <ReconcileModal account={reconAccount} transactions={transactions}
         manualJEs={manualJEs} accounts={accounts}
         reconHistory={reconHistory} reconciliations={reconciliations}
+        manualRecons={manualRecons}
         onUndo={undoReconciliation}
         onUpdate={(id,fields)=>setTransactions(prev=>prev.map(t=>t.id===id?{...t,...fields}:t))}
         onComplete={completeReconciliation} onClose={()=>setReconAccount(null)}/>}
