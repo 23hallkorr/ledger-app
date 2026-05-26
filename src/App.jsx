@@ -3023,28 +3023,7 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   const [endDate,      setEndDate]      = useState(()=>new Date().toISOString().slice(0,10));
   const [includeAfter, setIncludeAfter] = useState(false);
   const [step,         setStep]         = useState(1);
-  const [cleared, setCleared] = useState(() => {
-    // Pre-check any transactions already reconciled for this account
-    const preCleared = new Set();
-    transactions.forEach(t => {
-      if (!t.accountId) return;
-      if (!(t.sourceId===account.id || t.accountId===account.id)) return;
-      const accts = t.reconciledAccts || [];
-      if (accts.length === 0 && t.reconciled) preCleared.add(t.id); // legacy
-      else if (accts.includes(account.id)) preCleared.add(t.id);
-    });
-    // Pre-check reconciled JE lines
-    (manualJEs||[]).forEach(je => {
-      (je.lines||[]).forEach((l, li) => {
-        if (l.accountId !== account.id) return;
-        const lid = String(l.id||li);
-        if ((je.reconciledLines||[]).includes(lid)) {
-          preCleared.add(`${je.id}::${lid}`);
-        }
-      });
-    });
-    return preCleared;
-  });
+  const [cleared, setCleared] = useState(new Set());
   const [editingId,    setEditingId]    = useState(null);
   const [editFields,   setEditFields]   = useState({});
 
@@ -3067,14 +3046,17 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   const allItems = useMemo(()=>{
     const txnItems = transactions
       .filter(t=>(t.sourceId===account.id||t.accountId===account.id) && t.accountId)
+      .filter(t=>{
+        if (!t.reconciled) return true;
+        if (!t.reconciledAccts || t.reconciledAccts.length === 0) return !t.reconciled;
+        return !t.reconciledAccts.includes(account.id);
+      })
       .filter(t=>{ if(!t.date) return true; const nd=normDate(t.date); return nd<=endDate||(includeAfter&&nd>endDate); })
       .map(t=>({
         id: t.id,
         type: "txn",
         date: t.date,
         description: t.description,
-        // For counterpart transactions (classified TO this account from another source),
-        // flip the sign so it reflects this account's perspective
         amount: t.accountId===account.id && t.sourceId!==account.id ? -t.amount : t.amount,
         accountId: t.accountId,
         sourceId: t.sourceId,
@@ -3086,7 +3068,7 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
       .flatMap(je => je.lines
         .map((l, li) => ({...l, _lineIndex: li}))
         .filter(l=>l.accountId===account.id)
-
+        .filter(l=>{ const lid=String(l.id||l._lineIndex); return !(je.reconciledLines||[]).includes(lid); })
         .map(l => ({
           id: `${je.id}::${l.id||l._lineIndex}`,
           type: "je",
@@ -3132,7 +3114,24 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   const lastRecon = reconciliations?.[account.id];
   const lastBalance = parseFloat(lastRecon?.lastBalance || 0);
   // Convert lastBalance to internal sign convention
-  const startingBalance = isDebitNormal ? lastBalance : -lastBalance;
+  const priorBalance = isDebitNormal ? lastBalance : -lastBalance;
+
+  // Add manually reconciled transactions (hidden from register, need to be in starting balance)
+  const manualReconBalance = transactions
+    .filter(t => {
+      if (!(t.sourceId===account.id || t.accountId===account.id) || !t.accountId) return false;
+      const accts = t.reconciledAccts || [];
+      if (accts.length === 0) return false; // skip legacy — already in lastBalance
+      return accts.includes(account.id);
+    })
+    .reduce((s, t) => {
+      const amt = t.accountId===account.id && t.sourceId!==account.id ? -t.amount : t.amount;
+      const dr = isDebitNormal ? (amt>=0?Math.abs(amt):0) : (amt<0?Math.abs(amt):0);
+      const cr = isDebitNormal ? (amt<0?Math.abs(amt):0) : (amt>=0?Math.abs(amt):0);
+      return isDebitNormal ? s + dr - cr : s + cr - dr;
+    }, 0);
+
+  const startingBalance = priorBalance + manualReconBalance;
 
   const clearedTotal = allItems.filter(i=>cleared.has(i.id)).reduce((s,i)=>{
     const {debit,credit} = getDebitCredit(i);
