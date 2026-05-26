@@ -2412,10 +2412,11 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                     const isCounterpart = sourceAccount && t.accountId===sourceAccount.id && t.sourceId!==sourceAccount.id;
                     // The category to display — if counterpart, show the source account; else show category
                     const displayAcct = isCounterpart ? acctById[t.sourceId] : catAcct;
-                    // R badge: show if this account reconciled it (formally or manually)
+                    // R badge: show if this account reconciled it
+                    const _acctId = sourceAccount?.id || t.sourceId;
                     const showR = (
-                      (t.reconciledAccts||[]).includes(sourceAccount?.id) ||
-                      (t.reconciled && (!t.reconciledAccts || t.reconciledAccts.length===0) && t.sourceId===sourceAccount?.id)
+                      (t.reconciledAccts||[]).includes(_acctId) ||
+                      (t.reconciled && (!t.reconciledAccts || t.reconciledAccts.length===0) && t.sourceId===_acctId)
                     );
 
                     return (
@@ -3132,21 +3133,22 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
 
   const manualReconBalance = manualTxns.reduce((s, t) => {
       const amt = t.accountId===account.id && t.sourceId!==account.id ? -t.amount : t.amount;
-      const dr = isDebitNormal ? (amt>=0?Math.abs(amt):0) : (amt<0?Math.abs(amt):0);
-      const cr = isDebitNormal ? (amt<0?Math.abs(amt):0) : (amt>=0?Math.abs(amt):0);
-      return isDebitNormal ? s + dr - cr : s + cr - dr;
+      // Use same getDebitCredit logic as allItems for consistency
+      if (isDebitNormal) {
+        const dr = amt >= 0 ? Math.abs(amt) : 0;
+        const cr = amt < 0  ? Math.abs(amt) : 0;
+        return s + dr - cr;
+      } else {
+        // Liability: negative amount (charge) → debit increases liability → subtract from balance
+        // Positive amount (payment) → credit decreases liability → add to balance  
+        // clearedTotal for liability = s + credit - debit
+        // charge (amt<0): debit=abs(amt), credit=0 → s + 0 - abs(amt) = s - abs
+        // payment (amt>=0): debit=0, credit=abs(amt) → s + abs - 0 = s + abs
+        const dr = amt < 0  ? Math.abs(amt) : 0;
+        const cr = amt >= 0 ? Math.abs(amt) : 0;
+        return s + cr - dr;
+      }
     }, 0);
-
-  console.log("ReconcileModal debug:", {
-    acctId: account.id,
-    isDebitNormal,
-    priorBalance,
-    manualTxnsCount: manualTxns.length,
-    manualTxns: manualTxns.map(t=>({id:t.id,amount:t.amount,reconciledAccts:t.reconciledAccts})),
-    manualReconBalance,
-    formallyReconciledCount: formallyReconciledIds.size,
-    reconHistoryCount: (reconHistory||[]).filter(h=>h.acctId===account.id).length,
-  });
 
   const startingBalance = priorBalance + manualReconBalance;
 
@@ -3180,7 +3182,7 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
         <div className="modal-title">Reconcile — {account.name}</div>
         <div style={{display:"flex",justifyContent:"space-between",background:"var(--surface2)",borderRadius:6,padding:"8px 12px",marginBottom:12,fontSize:12}}>
           <span style={{color:"var(--text3)"}}>Beginning Balance</span>
-          <span style={{fontFamily:"DM Mono,monospace",color:"var(--text)",fontWeight:700}}>{lastRecon ? fmt(lastRecon.lastBalance) : fmt(0)}</span>
+          <span style={{fontFamily:"DM Mono,monospace",color:"var(--text)",fontWeight:700}}>{fmt(isDebitNormal ? startingBalance : -startingBalance)}</span>
         </div>
         <div className="field"><label>Statement Ending Date</label>
           <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}/>
@@ -4032,16 +4034,17 @@ export default function FinanceApp() {
   };
 
   const manualReconcile = useCallback((txn, acctId) => {
-    console.log("manualReconcile called:", {txnId: txn.id, acctId, currentReconciledAccts: txn.reconciledAccts});
-    if (!acctId) { console.warn("manualReconcile: no acctId!"); return; }
+    if (!acctId) return;
     setTransactions(prev => prev.map(t => {
       if (t.id !== txn.id) return t;
-      const isReconciled = (t.reconciledAccts||[]).includes(acctId) || (t.reconciled && !t.reconciledAccts?.length);
+      const accts = t.reconciledAccts || [];
+      const isReconciled = accts.includes(acctId) || (t.reconciled && accts.length === 0);
       if (isReconciled) {
-        const remaining = (t.reconciledAccts||[]).filter(a => a !== acctId);
+        // Unreconcile: remove this acct, and if legacy (no reconciledAccts), set reconciled false
+        const remaining = accts.filter(a => a !== acctId);
         return {...t, reconciled: remaining.length > 0, reconciledAccts: remaining};
       } else {
-        const updated = [...new Set([...(t.reconciledAccts||[]), acctId])];
+        const updated = [...new Set([...accts, acctId])];
         return {...t, reconciled: true, reconciledAccts: updated};
       }
     }));
