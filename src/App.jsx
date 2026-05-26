@@ -3152,6 +3152,7 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
       }
     }, 0);
 
+  console.log("ReconcileModal:", {acctId:account.id, isDebitNormal, priorBalance, manualReconBalance, startingBalance: priorBalance+manualReconBalance, manualTxnsCount:manualTxns.length, manualTxns:manualTxns.map(t=>({id:t.id,amount:t.amount,reconciledAccts:t.reconciledAccts}))});
   const startingBalance = priorBalance + manualReconBalance;
 
   const clearedTotal = allItems.filter(i=>cleared.has(i.id)).reduce((s,i)=>{
@@ -4036,7 +4037,8 @@ export default function FinanceApp() {
   };
 
   const manualReconcile = useCallback((txn, acctId) => {
-    if (!acctId) return;
+    console.log("manualReconcile:", {id:txn.id, acctId, isJE:txn.isJE, currentAccts:txn.reconciledAccts, reconciled:txn.reconciled});
+    if (!acctId) { console.warn("NO ACCTID"); return; }
     if (txn.isJE) {
       // JE rows: toggle reconciledLines on the parent JE
       setManualJEs(prev => prev.map(je => {
