@@ -2089,7 +2089,7 @@ function ResizeTh({ width, onResize, children, style={} }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSACTION TABLE
 // ─────────────────────────────────────────────────────────────────────────────
-function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manualJEs, onClassify, onSplit, onMatchTransfer, onDelete, onUpdate, rules, onApplyRules, onEditJE, onManualReconcile }) {
+function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manualJEs, onClassify, onSplit, onMatchTransfer, onDelete, onUpdate, rules, onApplyRules, onEditJE, onManualReconcile, manualRecons }) {
   const [selected,      setSelected]      = useState(new Set());
   const [search,        setSearch]        = useState("");
   const [section,       setSection]       = useState("uncategorized");
@@ -4827,6 +4827,7 @@ export default function FinanceApp() {
                       onApplyRules={applyAllRules}
                       onEditJE={postJournalEntry}
                       onManualReconcile={manualReconcile}
+                      manualRecons={manualRecons}
                     />
                 }
               </>
