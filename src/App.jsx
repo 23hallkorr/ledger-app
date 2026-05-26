@@ -2507,7 +2507,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                               </td>
                               <td style={{textAlign:"center",width:28}} onClick={e=>e.stopPropagation()}>
                                 <span title={showR?"Unreconcile":"Reconcile"}
-                                  onClick={()=>onManualReconcile&&onManualReconcile(t,sourceAccount?.id)}
+                                  onClick={()=>onManualReconcile&&onManualReconcile(t,sourceAccount?.id||t.sourceId)}
                                   style={{fontSize:14,fontWeight:800,color:showR?"var(--green)":"var(--border2)",cursor:"pointer",userSelect:"none",padding:"2px 4px",borderRadius:3}}>R</span>
                               </td>
                             </>
@@ -2563,7 +2563,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                               </td>
                               <td style={{textAlign:"center",width:28}} onClick={e=>e.stopPropagation()}>
                                 <span title={showR?"Unreconcile":"Reconcile"}
-                                  onClick={()=>onManualReconcile&&onManualReconcile(t,sourceAccount?.id)}
+                                  onClick={()=>onManualReconcile&&onManualReconcile(t,sourceAccount?.id||t.sourceId)}
                                   style={{fontSize:14,fontWeight:800,color:showR?"var(--green)":"var(--border2)",cursor:"pointer",userSelect:"none",padding:"2px 4px",borderRadius:3}}>R</span>
                               </td>
                             </>
@@ -4032,7 +4032,8 @@ export default function FinanceApp() {
   };
 
   const manualReconcile = useCallback((txn, acctId) => {
-    if (!acctId) return;
+    console.log("manualReconcile called:", {txnId: txn.id, acctId, currentReconciledAccts: txn.reconciledAccts});
+    if (!acctId) { console.warn("manualReconcile: no acctId!"); return; }
     setTransactions(prev => prev.map(t => {
       if (t.id !== txn.id) return t;
       const isReconciled = (t.reconciledAccts||[]).includes(acctId) || (t.reconciled && !t.reconciledAccts?.length);
