@@ -3047,9 +3047,11 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
     const txnItems = transactions
       .filter(t=>(t.sourceId===account.id||t.accountId===account.id) && t.accountId)
       .filter(t=>{
-        if (!t.reconciled) return true;
+        if (!t.reconciled && !(t.manualReconAccts||[]).includes(account.id)) return true;
+        if (t.reconciledAccts?.includes(account.id)) return false;
+        if ((t.manualReconAccts||[]).includes(account.id)) return false;
         if (!t.reconciledAccts || t.reconciledAccts.length === 0) return !t.reconciled;
-        return !t.reconciledAccts.includes(account.id);
+        return true;
       })
       .filter(t=>{ if(!t.date) return true; const nd=normDate(t.date); return nd<=endDate||(includeAfter&&nd>endDate); })
       .map(t=>({
@@ -3116,13 +3118,12 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   // Convert lastBalance to internal sign convention
   const priorBalance = isDebitNormal ? lastBalance : -lastBalance;
 
-  // Add manually reconciled transactions (hidden from register, need to be in starting balance)
+  // Add transactions reconciled via manual toggle (manualReconAccts) to starting balance
+  // These are separate from formally reconciled txns already in priorBalance
   const manualReconBalance = transactions
     .filter(t => {
       if (!(t.sourceId===account.id || t.accountId===account.id) || !t.accountId) return false;
-      const accts = t.reconciledAccts || [];
-      if (accts.length === 0) return false; // skip legacy — already in lastBalance
-      return accts.includes(account.id);
+      return (t.manualReconAccts||[]).includes(account.id);
     })
     .reduce((s, t) => {
       const amt = t.accountId===account.id && t.sourceId!==account.id ? -t.amount : t.amount;
@@ -4022,11 +4023,13 @@ export default function FinanceApp() {
       if (isReconciled) {
         // Unreconcile
         const remaining = (t.reconciledAccts||[]).filter(a => a !== acctId);
-        return {...t, reconciled: remaining.length > 0, reconciledAccts: remaining};
+        const manualRemaining = (t.manualReconAccts||[]).filter(a => a !== acctId);
+        return {...t, reconciled: remaining.length > 0, reconciledAccts: remaining, manualReconAccts: manualRemaining};
       } else {
-        // Reconcile
+        // Reconcile — mark both reconciledAccts AND manualReconAccts
         const updated = [...new Set([...(t.reconciledAccts||[]), acctId])];
-        return {...t, reconciled: true, reconciledAccts: updated};
+        const manualUpdated = [...new Set([...(t.manualReconAccts||[]), acctId])];
+        return {...t, reconciled: true, reconciledAccts: updated, manualReconAccts: manualUpdated};
       }
     }));
     setTimeout(save, 100);
