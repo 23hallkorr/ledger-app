@@ -3123,18 +3123,30 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   );
 
   // Add manually reconciled transactions (in reconciledAccts but NOT in any formal reconciliation)
-  const manualReconBalance = transactions
+  const manualTxns = transactions
     .filter(t => {
       if (!(t.sourceId===account.id || t.accountId===account.id) || !t.accountId) return false;
       if (!(t.reconciledAccts||[]).includes(account.id)) return false;
-      return !formallyReconciledIds.has(t.id); // exclude formally reconciled (already in priorBalance)
-    })
-    .reduce((s, t) => {
+      return !formallyReconciledIds.has(t.id);
+    });
+
+  const manualReconBalance = manualTxns.reduce((s, t) => {
       const amt = t.accountId===account.id && t.sourceId!==account.id ? -t.amount : t.amount;
       const dr = isDebitNormal ? (amt>=0?Math.abs(amt):0) : (amt<0?Math.abs(amt):0);
       const cr = isDebitNormal ? (amt<0?Math.abs(amt):0) : (amt>=0?Math.abs(amt):0);
       return isDebitNormal ? s + dr - cr : s + cr - dr;
     }, 0);
+
+  console.log("ReconcileModal debug:", {
+    acctId: account.id,
+    isDebitNormal,
+    priorBalance,
+    manualTxnsCount: manualTxns.length,
+    manualTxns: manualTxns.map(t=>({id:t.id,amount:t.amount,reconciledAccts:t.reconciledAccts})),
+    manualReconBalance,
+    formallyReconciledCount: formallyReconciledIds.size,
+    reconHistoryCount: (reconHistory||[]).filter(h=>h.acctId===account.id).length,
+  });
 
   const startingBalance = priorBalance + manualReconBalance;
 
