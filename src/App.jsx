@@ -2089,7 +2089,7 @@ function ResizeTh({ width, onResize, children, style={} }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSACTION TABLE
 // ─────────────────────────────────────────────────────────────────────────────
-function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manualJEs, onClassify, onSplit, onMatchTransfer, onDelete, onUpdate, rules, onApplyRules, onEditJE }) {
+function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manualJEs, onClassify, onSplit, onMatchTransfer, onDelete, onUpdate, rules, onApplyRules, onEditJE, onManualReconcile }) {
   const [selected,      setSelected]      = useState(new Set());
   const [search,        setSearch]        = useState("");
   const [section,       setSection]       = useState("uncategorized");
@@ -2430,10 +2430,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                             onClick={e=>toggleOneShift(t.id, rowIdx, e)}/>}
                         </td>
                         <td className="font-mono" style={{color:"var(--text3)",fontSize:12,whiteSpace:"nowrap"}}>
-                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
-                            <span>{t.date}</span>
-                            {showR && <span style={{fontSize:13,color:"var(--green)",fontWeight:800}}>R</span>}
-                          </div>
+                          {t.date}
                         </td>
                         <td style={{color:isCounterpart?"var(--text2)":"var(--text)"}}
                           onDoubleClick={e=>{if(isCounterpart)return;e.stopPropagation();setEditingDescId(t.id);setEditDescVal(t.description||"");}}>
@@ -2509,6 +2506,11 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                     : null
                                 }
                               </td>
+                              <td style={{textAlign:"center",width:28}} onClick={e=>e.stopPropagation()}>
+                                <span title={showR?"Unreconcile":"Reconcile"}
+                                  onClick={()=>onManualReconcile&&onManualReconcile(t,sourceAccount?.id)}
+                                  style={{fontSize:14,fontWeight:800,color:showR?"var(--green)":"var(--border2)",cursor:"pointer",userSelect:"none",padding:"2px 4px",borderRadius:3}}>R</span>
+                              </td>
                             </>
                           : <>
                               <td><span className={`amount ${t.amount>=0?"pos":"neg"}`}>{fmt(t.amount)}</span></td>
@@ -2559,6 +2561,11 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                   <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:"2px 6px",opacity:.6}}
                                     onClick={()=>onSplit(t)} title="Split across categories">⑂</button>
                                 )}
+                              </td>
+                              <td style={{textAlign:"center",width:28}} onClick={e=>e.stopPropagation()}>
+                                <span title={showR?"Unreconcile":"Reconcile"}
+                                  onClick={()=>onManualReconcile&&onManualReconcile(t,sourceAccount?.id)}
+                                  style={{fontSize:14,fontWeight:800,color:showR?"var(--green)":"var(--border2)",cursor:"pointer",userSelect:"none",padding:"2px 4px",borderRadius:3}}>R</span>
                               </td>
                             </>
                         }
@@ -3114,10 +3121,31 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   // Convert lastBalance to internal sign convention
   const startingBalance = isDebitNormal ? lastBalance : -lastBalance;
 
+  // Add manually reconciled transactions (reconciledAccts includes this account
+  // but they are NOT in the current allItems since they're already filtered out)
+  const manuallyReconciledTotal = transactions
+    .filter(t => {
+      if (!(t.sourceId===account.id || t.accountId===account.id)) return false;
+      if (!t.accountId) return false;
+      if (!t.reconciled) return false;
+      const accts = t.reconciledAccts || [];
+      return accts.length === 0
+        ? t.reconciled  // legacy
+        : accts.includes(account.id);
+    })
+    .reduce((s, t) => {
+      const amt = t.accountId===account.id && t.sourceId!==account.id ? -t.amount : t.amount;
+      const {debit, credit} = (() => {
+        if (isDebitNormal) return amt >= 0 ? {debit:Math.abs(amt),credit:0} : {debit:0,credit:Math.abs(amt)};
+        return amt >= 0 ? {debit:0,credit:Math.abs(amt)} : {debit:Math.abs(amt),credit:0};
+      })();
+      return isDebitNormal ? s + debit - credit : s + credit - debit;
+    }, 0);
+
   const clearedTotal = allItems.filter(i=>cleared.has(i.id)).reduce((s,i)=>{
     const {debit,credit} = getDebitCredit(i);
     return isDebitNormal ? s + debit - credit : s + credit - debit;
-  }, startingBalance);
+  }, startingBalance + manuallyReconciledTotal);
   // For liability/credit card accounts, the user enters a positive statement balance
   // (e.g. "500" meaning you owe $500), so we negate it internally to match the sign convention
   const endBal = isDebitNormal
@@ -3997,6 +4025,24 @@ export default function FinanceApp() {
     setTimeout(save, 100);
   };
 
+  const manualReconcile = useCallback((txn, acctId) => {
+    if (!acctId) return;
+    setTransactions(prev => prev.map(t => {
+      if (t.id !== txn.id) return t;
+      const isReconciled = (t.reconciledAccts||[]).includes(acctId) || (t.reconciled && !t.reconciledAccts?.length);
+      if (isReconciled) {
+        // Unreconcile
+        const remaining = (t.reconciledAccts||[]).filter(a => a !== acctId);
+        return {...t, reconciled: remaining.length > 0, reconciledAccts: remaining};
+      } else {
+        // Reconcile
+        const updated = [...new Set([...(t.reconciledAccts||[]), acctId])];
+        return {...t, reconciled: true, reconciledAccts: updated};
+      }
+    }));
+    setTimeout(save, 100);
+  }, [save]);
+
   const postJournalEntry = useCallback((je) => {
     setManualJEs(prev => {
       const exists = prev.find(e=>e.id===je.id);
@@ -4759,6 +4805,7 @@ export default function FinanceApp() {
                       rules={rules}
                       onApplyRules={applyAllRules}
                       onEditJE={postJournalEntry}
+                      onManualReconcile={manualReconcile}
                     />
                 }
               </>
