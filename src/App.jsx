@@ -3130,21 +3130,18 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
 
   const manualReconBalance = manualTxns.reduce((s, t) => {
       const amt = t.accountId===account.id && t.sourceId!==account.id ? -t.amount : t.amount;
-      // Use same getDebitCredit logic as allItems for consistency
+      let contribution;
       if (isDebitNormal) {
         const dr = amt >= 0 ? Math.abs(amt) : 0;
         const cr = amt < 0  ? Math.abs(amt) : 0;
-        return s + dr - cr;
+        contribution = dr - cr;
       } else {
-        // Liability: negative amount (charge) → debit increases liability → subtract from balance
-        // Positive amount (payment) → credit decreases liability → add to balance  
-        // clearedTotal for liability = s + credit - debit
-        // charge (amt<0): debit=abs(amt), credit=0 → s + 0 - abs(amt) = s - abs
-        // payment (amt>=0): debit=0, credit=abs(amt) → s + abs - 0 = s + abs
         const dr = amt < 0  ? Math.abs(amt) : 0;
         const cr = amt >= 0 ? Math.abs(amt) : 0;
-        return s + cr - dr;
+        contribution = cr - dr;
       }
+      console.log(`manualRecon txn: amount=${t.amount} amt=${amt} contribution=${contribution} running=${s+contribution} displayBalance=${-(s+contribution+priorBalance)}`);
+      return s + contribution;
     }, 0);
 
   const startingBalance = priorBalance + manualReconBalance;
