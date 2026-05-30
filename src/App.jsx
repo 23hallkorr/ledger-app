@@ -4445,15 +4445,31 @@ export default function FinanceApp() {
     }
     setTimeout(save,100);
   },[save]);
-  const deleteTxn   = useCallback((id)=>{
+  const deleteTxn = useCallback((id)=>{
     setExcludedTxns(prev=>{ const n=new Set(prev); n.delete(id); return n; });
-    setTransactions(prev=>prev.map(t=>t.id===id?{...t, accountId:null, transferMatchId:null, splits:null, excluded:false}:t));
+    setTransactions(prev=>{
+      const txn = prev.find(t=>t.id===id);
+      const matchId = txn?.transferMatchId;
+      // If this is one side of a matched transfer, uncategorize both sides together
+      return prev.map(t=>{
+        if (t.id===id || (matchId && t.transferMatchId===matchId))
+          return {...t, accountId:null, transferMatchId:null, splits:null, excluded:false};
+        return t;
+      });
+    });
     setTimeout(save,100);
   },[save]);
 
   const hardDeleteTxn = useCallback((id)=>{
     setExcludedTxns(prev=>{ const n=new Set(prev); n.delete(id); return n; });
-    setTransactions(prev=>prev.filter(t=>t.id!==id));
+    setTransactions(prev=>{
+      const txn = prev.find(t=>t.id===id);
+      const matchId = txn?.transferMatchId;
+      return prev
+        .filter(t=>t.id!==id)
+        // Clear the dangling transferMatchId on the surviving partner
+        .map(t=>matchId && t.transferMatchId===matchId ? {...t, transferMatchId:null} : t);
+    });
     setTimeout(save,100);
   },[save]);
 
@@ -4495,12 +4511,24 @@ export default function FinanceApp() {
   },[tabList]);
 
   // Transactions scoped to active source — includes txns FROM this account
-  // AND txns classified TO this account (double-entry: the counterpart leg)
+  // AND txns classified TO this account (double-entry: the counterpart leg).
+  // For matched transfers, exclude the counterpart leg: the primary leg (sourceId=this account)
+  // already represents the full transfer, so only one row is shown per register.
   const sourceTxns = useMemo(()=>{
     if (activeSrcId==="all") return transactions;
-    return transactions.filter(t=>
-      t.sourceId===activeSrcId || t.accountId===activeSrcId
-    );
+    return transactions.filter(t=>{
+      if (t.sourceId !== activeSrcId && t.accountId !== activeSrcId) return false;
+      // For matched transfers: hide the counterpart leg if the primary leg is present
+      if (t.transferMatchId && t.accountId === activeSrcId && t.sourceId !== activeSrcId) {
+        const hasPrimaryLeg = transactions.some(t2 =>
+          t2.id !== t.id &&
+          t2.transferMatchId === t.transferMatchId &&
+          t2.sourceId === activeSrcId
+        );
+        if (hasPrimaryLeg) return false;
+      }
+      return true;
+    });
   },[transactions, activeSrcId]);
 
   // All classified txns filtered by date range (for reports)
@@ -5037,7 +5065,15 @@ export default function FinanceApp() {
                             const acct = t.accountId ? acctById2[t.accountId] : null;
                             return (
                               <div key={t.id} style={{padding:"9px 16px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}
-                                onClick={e=>{e.stopPropagation();setCardTxn(t);setShowSearch(false);setGlobalSearch("");}}>
+                                onClick={e=>{
+                                  e.stopPropagation();
+                                  const captured=t;
+                                  setShowSearch(false);
+                                  setGlobalSearch("");
+                                  // Defer so the card mounts after the current click event fully resolves,
+                                  // preventing the modal-overlay onClick from firing on the same click.
+                                  setTimeout(()=>setCardTxn(captured),0);
+                                }}>
                                 <div style={{flex:1,minWidth:0}}>
                                   <div style={{fontSize:13,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</div>
                                   <div style={{fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginTop:1}}>{t.date}</div>
