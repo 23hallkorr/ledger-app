@@ -5101,7 +5101,12 @@ export default function FinanceApp() {
                             const acct = t.accountId ? acctById2[t.accountId] : null;
                             return (
                               <div key={t.id} style={{padding:"9px 16px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}
-                                onClick={e=>{
+                                onMouseDown={e=>{
+                                  // Use mouseDown so the card state is set before the search input
+                                  // can fire blur/focus events or the click event can reach the
+                                  // TxnCard overlay. e.preventDefault() stops default focus-switch.
+                                  // The overlay's 150ms guard handles the click that follows.
+                                  e.preventDefault();
                                   e.stopPropagation();
                                   setShowSearch(false);
                                   setGlobalSearch("");
