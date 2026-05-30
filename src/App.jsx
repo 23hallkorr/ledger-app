@@ -3464,11 +3464,16 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
 
   const isDebitNormal = acct && ["Asset","Expense"].includes(acct.type);
 
-  // Starting balance from last reconciliation
+  // Starting balance from last reconciliation.
+  // Convention: lastBalance is stored as the user-facing positive amount (e.g. 500 for $500 owed).
+  // We then negate for credit-normal accounts to get the internal signed value used in clearedTotal.
   const lastRecon = reconciliations?.[account.id];
-  const lastBalance = parseFloat(lastRecon?.lastBalance || 0);
-  // Convert lastBalance to internal sign convention
-  const priorBalance = isDebitNormal ? lastBalance : -lastBalance;
+  let rawLastBalance = parseFloat(lastRecon?.lastBalance || 0);
+  // Migrate old data: before the sign fix, credit-normal accounts stored negative values.
+  // A negative lastBalance for a credit-normal account means it was stored under the old
+  // convention — flip it to positive so the read-time negation below gives the right result.
+  if (!isDebitNormal && rawLastBalance < 0) rawLastBalance = -rawLastBalance;
+  const priorBalance = isDebitNormal ? rawLastBalance : -rawLastBalance;
 
   // Add manually reconciled transactions (toggled via R button, stored in manualRecons)
   const manualTxns = transactions
@@ -3477,14 +3482,16 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
       return (manualRecons[account.id]||[]).includes(t.id);
     });
 
+  // manualReconBalance adjusts startingBalance for transactions already marked reconciled
+  // outside the formal process.  Use the same debit/credit direction as clearedTotal so that
+  // manually reconciling a CC charge makes startingBalance more negative (more owed), and
+  // manually reconciling a bank deposit makes startingBalance more positive (more money).
   const manualReconBalance = manualTxns.reduce((s, t) => {
-      const amt = t.accountId===account.id && t.sourceId!==account.id ? -t.amount : t.amount;
-      // For both asset and liability: charge = negative contribution to internal balance
-      // This matches how clearedTotal accumulates (charges make it more negative)
-      // so the displayed beginning balance increases correctly
-      const contribution = -amt;
-      return s + contribution;
-    }, 0);
+    const adjAmount = t.accountId===account.id && t.sourceId!==account.id ? -t.amount : t.amount;
+    const {debit, credit} = getDebitCredit({type: "txn", amount: adjAmount});
+    const contribution = isDebitNormal ? debit - credit : credit - debit;
+    return s + contribution;
+  }, 0);
 
   const startingBalance = priorBalance + manualReconBalance;
 
@@ -3808,7 +3815,9 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
               onClick={()=>{
                 const txnIds=[...cleared].filter(id=>!id.includes("::"));
                 const jeLineIds=[...cleared].filter(id=>id.includes("::"));
-                onComplete(account.id,endDate,endBal,txnIds,jeLineIds);
+                // Store the raw user-entered balance (always positive, same as bank statement).
+                // priorBalance reading applies the sign convention, avoiding double-negation.
+                onComplete(account.id,endDate,parseFloat(endBalance)||0,txnIds,jeLineIds);
               }}>
               ✓ Finish Reconciliation
             </button>
