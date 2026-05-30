@@ -2269,6 +2269,14 @@ function TxnCard({ transaction, accounts, paymentAccounts, onSave, onHardDelete,
   const lineTotal = lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
   const balanced  = lines.length === 1 || Math.abs(lineTotal - total) < 0.005;
 
+  // Guard: ignore overlay clicks for 150ms after mount so the click that
+  // opened the card doesn't immediately close it via the modal-overlay handler.
+  const overlayReady = useRef(false);
+  useEffect(() => {
+    const t = setTimeout(() => { overlayReady.current = true; }, 150);
+    return () => clearTimeout(t);
+  }, []);
+
   useEffect(() => {
     const h = e => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", h);
@@ -2295,7 +2303,7 @@ function TxnCard({ transaction, accounts, paymentAccounts, onSave, onHardDelete,
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={() => { if (overlayReady.current) onClose(); }}>
       <div className="txn-card-modal" onClick={e => e.stopPropagation()}>
 
         {/* ── Top: payee / account / date / amount ── */}
@@ -2468,9 +2476,27 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
     if (filterRecon==="unreconciled") base = base.filter(t=>!t.reconciled);
     return base.sort((a,b)=>{
       let av,bv;
-      if      (sortKey==="date")  { av=a.date||""; bv=b.date||""; }
-      else if (sortKey==="desc")  { av=(a.description||"").toLowerCase(); bv=(b.description||"").toLowerCase(); }
-      else                        { av=Math.abs(a.amount||0); bv=Math.abs(b.amount||0); }
+      if (sortKey==="date") {
+        av=a.date||""; bv=b.date||"";
+      } else if (sortKey==="desc") {
+        av=(a.description||"").toLowerCase(); bv=(b.description||"").toLowerCase();
+      } else if (sortKey==="category") {
+        const acctById2=Object.fromEntries(accounts.map(x=>[x.id,x]));
+        av=(a.accountId?acctById2[a.accountId]?.name||"":"").toLowerCase();
+        bv=(b.accountId?acctById2[b.accountId]?.name||"":"").toLowerCase();
+      } else if (sortKey==="debit") {
+        const ea=getEntry(a), eb=getEntry(b);
+        av=ea&&ea.debitAcctId===sourceAccount?.id?ea.absAmount:0;
+        bv=eb&&eb.debitAcctId===sourceAccount?.id?eb.absAmount:0;
+      } else if (sortKey==="credit") {
+        const ea=getEntry(a), eb=getEntry(b);
+        av=ea&&ea.creditAcctId===sourceAccount?.id?ea.absAmount:0;
+        bv=eb&&eb.creditAcctId===sourceAccount?.id?eb.absAmount:0;
+      } else if (sortKey==="transfer") {
+        av=a.transferMatchId?1:0; bv=b.transferMatchId?1:0;
+      } else {
+        av=Math.abs(a.amount||0); bv=Math.abs(b.amount||0);
+      }
       if(av<bv) return sortDir==="asc"?-1:1;
       if(av>bv) return sortDir==="asc"?1:-1;
       return 0;
@@ -2690,11 +2716,11 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
           </div>
         : <>
             <div className="txn-table-wrap">
-              <table className="txn-table">
+              <table className="txn-table" style={{tableLayout:"fixed",width:"100%"}}>
                 <colgroup>
                   <col style={{width:34}}/>
                   <col style={{width:colWidths.date}}/>
-                  <col/>
+                  <col/>{/* description fills remaining width */}
                   {showJournal&&section==="categorized"?<>
                     <col style={{width:colWidths.amt}}/><col style={{width:colWidths.amt}}/><col style={{width:colWidths.cat}}/><col style={{width:colWidths.transfer}}/><col style={{width:colWidths.del}}/>
                   </>:<>
@@ -2710,16 +2736,26 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                     <span className="sort-th" onClick={()=>cycleSort("desc")}>Description<span className={`sort-arrow${sortKey==="desc"?" active":""}`}>{sortKey==="desc"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
                   </ResizeTh>
                   {showJournal&&section==="categorized"
-                    ? <><ResizeTh width={colWidths.amt} onResize={w=>setCW("amt",w)} style={{textAlign:"right",color:"var(--blue)"}}>Debit</ResizeTh>
-                        <ResizeTh width={colWidths.amt} onResize={w=>setCW("amt",w)} style={{textAlign:"right",color:"var(--purple)"}}>Credit</ResizeTh>
-                        <ResizeTh width={colWidths.cat} onResize={w=>setCW("cat",w)}>Category</ResizeTh>
-                        <ResizeTh width={colWidths.transfer} onResize={w=>setCW("transfer",w)}>Transfer</ResizeTh>
-                        <th style={{width:colWidths.del}}></th></>
+                    ? <><ResizeTh width={colWidths.amt} onResize={w=>setCW("amt",w)} style={{textAlign:"right",color:"var(--blue)"}}>
+                        <span className="sort-th" onClick={()=>cycleSort("debit")}>Debit<span className={`sort-arrow${sortKey==="debit"?" active":""}`}>{sortKey==="debit"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
+                      </ResizeTh>
+                      <ResizeTh width={colWidths.amt} onResize={w=>setCW("amt",w)} style={{textAlign:"right",color:"var(--purple)"}}>
+                        <span className="sort-th" onClick={()=>cycleSort("credit")}>Credit<span className={`sort-arrow${sortKey==="credit"?" active":""}`}>{sortKey==="credit"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
+                      </ResizeTh>
+                      <ResizeTh width={colWidths.cat} onResize={w=>setCW("cat",w)}>
+                        <span className="sort-th" onClick={()=>cycleSort("category")}>Category<span className={`sort-arrow${sortKey==="category"?" active":""}`}>{sortKey==="category"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
+                      </ResizeTh>
+                      <ResizeTh width={colWidths.transfer} onResize={w=>setCW("transfer",w)}>
+                        <span className="sort-th" onClick={()=>cycleSort("transfer")}>Transfer<span className={`sort-arrow${sortKey==="transfer"?" active":""}`}>{sortKey==="transfer"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
+                      </ResizeTh>
+                      <th style={{width:colWidths.del}}></th></>
                     : <><ResizeTh width={colWidths.amt} onResize={w=>setCW("amt",w)}>
                         <span className="sort-th" onClick={()=>cycleSort("amount")}>Amount<span className={`sort-arrow${sortKey==="amount"?" active":""}`}>{sortKey==="amount"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
                       </ResizeTh>
-                        <ResizeTh width={colWidths.cat} onResize={w=>setCW("cat",w)}>Category</ResizeTh>
-                        <th style={{width:colWidths.del}}></th></>
+                      <ResizeTh width={colWidths.cat} onResize={w=>setCW("cat",w)}>
+                        <span className="sort-th" onClick={()=>cycleSort("category")}>Category<span className={`sort-arrow${sortKey==="category"?" active":""}`}>{sortKey==="category"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
+                      </ResizeTh>
+                      <th style={{width:colWidths.del}}></th></>
                   }
                 </tr></thead>
                 <tbody>
@@ -2758,7 +2794,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                         <td className="font-mono" style={{color:"var(--text3)",fontSize:12,whiteSpace:"nowrap"}}>
                           {t.date}
                         </td>
-                        <td style={{color:isCounterpart?"var(--text2)":"var(--text)"}}
+                        <td style={{color:isCounterpart?"var(--text2)":"var(--text)",overflow:"hidden"}}
                           onDoubleClick={e=>{if(isCounterpart)return;e.stopPropagation();setEditingDescId(t.id);setEditDescVal(t.description||"");}}>
                           {editingDescId===t.id && !isCounterpart
                             ? <input autoFocus type="text" value={editDescVal}
@@ -5067,12 +5103,9 @@ export default function FinanceApp() {
                               <div key={t.id} style={{padding:"9px 16px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}
                                 onClick={e=>{
                                   e.stopPropagation();
-                                  const captured=t;
                                   setShowSearch(false);
                                   setGlobalSearch("");
-                                  // Defer so the card mounts after the current click event fully resolves,
-                                  // preventing the modal-overlay onClick from firing on the same click.
-                                  setTimeout(()=>setCardTxn(captured),0);
+                                  setCardTxn(t);
                                 }}>
                                 <div style={{flex:1,minWidth:0}}>
                                   <div style={{fontSize:13,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</div>
