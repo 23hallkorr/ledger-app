@@ -2171,6 +2171,56 @@ function ResizeTh({ width, onResize, children, style={} }) {
 // TRANSACTION TABLE
 // ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
+// ROW ACTIONS MENU  (⋮ dropdown for per-row actions)
+// ─────────────────────────────────────────────────────────────────────────────
+function RowActionsMenu({ items }) {
+  const [open, setOpen] = useState(false);
+  const [pos,  setPos]  = useState({top:0,left:0});
+  const wrapRef = useRef();
+
+  useEffect(() => {
+    if (!open) return;
+    const h = e => { if (!wrapRef.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  const toggle = e => {
+    e.stopPropagation();
+    if (!wrapRef.current) return;
+    const r = wrapRef.current.getBoundingClientRect();
+    const realItems = items.filter(i => i && i !== "---");
+    const menuH = realItems.length * 36 + items.filter(i=>i==="---").length * 9 + 8;
+    const top = (window.innerHeight - r.bottom) > menuH ? r.bottom + 2 : r.top - menuH - 2;
+    setPos({ top, left: r.right });
+    setOpen(v => !v);
+  };
+
+  return (
+    <div ref={wrapRef} style={{display:"inline-block"}}>
+      <button onClick={toggle}
+        style={{background:"none",border:"1px solid var(--border)",borderRadius:4,color:"var(--text2)",
+          cursor:"pointer",fontSize:14,padding:"1px 7px",lineHeight:1.4,fontWeight:700,letterSpacing:1}}>⋮</button>
+      {open && (
+        <div className="coa-menu-dropdown"
+          style={{position:"fixed",top:pos.top,left:pos.left,transform:"translateX(-100%)",minWidth:160,zIndex:9999}}>
+          {items.map((item, i) =>
+            item === "---" ? (
+              <div key={i} className="coa-menu-divider"/>
+            ) : (
+              <button key={i} className={`coa-menu-item${item.danger?" danger":""}`}
+                onClick={e=>{ e.stopPropagation(); setOpen(false); item.action(); }}>
+                {item.label}
+              </button>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TRANSACTION CARD  (QuickBooks-style bill/check form)
 // ─────────────────────────────────────────────────────────────────────────────
 function TxnCard({ transaction, accounts, paymentAccounts, onSave, onHardDelete, onClose }) {
@@ -2345,15 +2395,13 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
   const [confirmBulkDel,    setConfirmBulkDel]    = useState(false);
   const [editingId,         setEditingId]         = useState(null);
   const [pendingQueue,      setPendingQueue]      = useState({});
-  const [confirmDelId,      setConfirmDelId]      = useState(null);
-  const [confirmHardDelId,  setConfirmHardDelId]  = useState(null);
   const [editingDescId,     setEditingDescId]     = useState(null);
   const [editingJE,         setEditingJE]         = useState(null);
   const [filterDateFrom,setFilterDateFrom]= useState("");
   const [filterDateTo,  setFilterDateTo]  = useState("");
   const [filterRecon,   setFilterRecon]   = useState("all");
   const [editDescVal,   setEditDescVal]   = useState("");
-  const [colWidths,     setColWidths]     = useState({date:90,desc:320,amt:110,cat:220,transfer:130,del:70});
+  const [colWidths,     setColWidths]     = useState({date:90,desc:320,amt:110,cat:220,transfer:130,del:48});
   const [sortKey,       setSortKey]       = useState("date");
   const [sortDir,       setSortDir]       = useState("desc");
   const setCW = (k,w) => setColWidths(p=>({...p,[k]:w}));
@@ -2394,8 +2442,15 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
   const pool = section==="uncategorized" ? uncategorized : section==="excluded" ? excluded : [...categorized,...jeRows];
 
   const filtered = useMemo(()=>{
-    const q = search.toLowerCase();
-    let base = q ? pool.filter(t=>(t.description||"").toLowerCase().includes(q)) : [...pool];
+    const q = search.trim().toLowerCase();
+    let base = q ? pool.filter(t => {
+      if ((t.description||"").toLowerCase().includes(q)) return true;
+      const abs = Math.abs(t.amount||0);
+      const plain = abs.toFixed(2);                                     // "240.00"
+      const withComma = plain.replace(/\B(?=(\d{3})+(?!\d))/g,",");    // "1,240.00"
+      return plain.includes(q) || withComma.includes(q) ||
+             ("$"+plain).includes(q) || ("$"+withComma).includes(q);
+    }) : [...pool];
     if (filterDateFrom) base = base.filter(t=>(t.date||"")>=filterDateFrom);
     if (filterDateTo)   base = base.filter(t=>(t.date||"")<=filterDateTo);
     if (filterRecon==="reconciled")   base = base.filter(t=>t.reconciled);
@@ -2536,8 +2591,8 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
 
       {/* Toolbar */}
       <div className="toolbar">
-        <input type="text" placeholder="Search descriptions…" value={search}
-          onChange={e=>{setSearch(e.target.value);setCurrentPage(1);}} style={{width:180}}/>
+        <input type="text" placeholder="Search description or amount…" value={search}
+          onChange={e=>{setSearch(e.target.value);setCurrentPage(1);}} style={{width:210}}/>
         <input type="date" value={filterDateFrom} onChange={e=>{setFilterDateFrom(e.target.value);setCurrentPage(1);}}
           style={{fontSize:12,padding:"4px 6px",background:"var(--surface2)",border:"1px solid var(--border)",borderRadius:6,color:"var(--text)",width:130}}
           title="From date"/>
@@ -2827,50 +2882,32 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                               </td>
                             </>
                         }
-                        <td style={{paddingLeft:4,whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
-                          <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"nowrap"}}>
-                            {t.isJE && (
-                              <button className="drill-je-btn" onClick={()=>{
+                        <td style={{paddingLeft:4,whiteSpace:"nowrap",width:48,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
+                          {t.isJE
+                            ? <button className="drill-je-btn" onClick={()=>{
                                 const je=(manualJEs||[]).find(e=>e.id===t.jeId);
                                 if(je) setEditingJE(je);
                               }}>✎ JE</button>
-                            )}
-                            {/* Open card — Categorized + uncategorized (for splits) */}
-                            {!t.isJE && !isCounterpart && onOpenCard && (section==="categorized" || section==="uncategorized") && (
-                              <button className="del-btn" style={{color:"var(--blue)",borderColor:"rgba(96,165,250,.3)"}}
-                                onClick={()=>onOpenCard(t)}>{section==="uncategorized"?"Split":"Open"}</button>
-                            )}
-                            {/* Uncategorized: Transfer match button */}
-                            {!t.isJE && !isCounterpart && section==="uncategorized" && matchCandidate && (
-                              <button className="match-btn" style={{padding:"2px 9px",fontSize:11}}
-                                onClick={()=>onMatchTransfer&&onMatchTransfer(matchCandidate.id, t.id)}>🔗 Match</button>
-                            )}
-                            {/* Uncategorized: Exclude */}
-                            {!t.isJE && !isCounterpart && section==="uncategorized" && (
-                              <button className="del-btn" onClick={()=>onExclude&&onExclude(t.id, true)}>Exclude</button>
-                            )}
-                            {/* Categorized / Excluded: Uncategorize or Restore */}
-                            {!t.isJE && !isCounterpart && section!=="uncategorized" && (confirmDelId===t.id
-                              ? <span style={{display:"flex",alignItems:"center",gap:5}}>
-                                  <span style={{fontSize:11,color:"var(--text2)"}}>Sure?</span>
-                                  <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.4)"}}
-                                    onClick={()=>{ onDelete&&onDelete(t.id); setConfirmDelId(null); }}>Yes</button>
-                                  <button className="del-btn" onClick={()=>setConfirmDelId(null)}>No</button>
-                                </span>
-                              : <button className="del-btn" onClick={()=>setConfirmDelId(t.id)}>{section==="excluded"?"Restore":"Uncategorize"}</button>
-                            )}
-                            {/* All sections: hard Delete */}
-                            {!t.isJE && !isCounterpart && onHardDelete && (confirmHardDelId===t.id
-                              ? <span style={{display:"flex",alignItems:"center",gap:5}}>
-                                  <span style={{fontSize:11,color:"var(--red)"}}>Delete?</span>
-                                  <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.4)"}}
-                                    onClick={()=>{ onHardDelete(t.id); setConfirmHardDelId(null); }}>Yes</button>
-                                  <button className="del-btn" onClick={()=>setConfirmHardDelId(null)}>No</button>
-                                </span>
-                              : <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.25)"}}
-                                  onClick={()=>{ setConfirmHardDelId(t.id); setConfirmDelId(null); }}>Delete</button>
-                            )}
-                          </div>
+                            : !isCounterpart && (()=>{
+                                const menuItems = [];
+                                if (onOpenCard && (section==="categorized"||section==="uncategorized"))
+                                  menuItems.push({label: section==="uncategorized"?"Split":"Open", action:()=>onOpenCard(t)});
+                                if (matchCandidate)
+                                  menuItems.push({label:"🔗 Match Transfer", action:()=>onMatchTransfer&&onMatchTransfer(matchCandidate.id,t.id)});
+                                if (menuItems.length) menuItems.push("---");
+                                if (section==="uncategorized")
+                                  menuItems.push({label:"Exclude", action:()=>onExclude&&onExclude(t.id,true)});
+                                if (section!=="uncategorized")
+                                  menuItems.push({label:section==="excluded"?"Restore":"Uncategorize", action:()=>onDelete&&onDelete(t.id)});
+                                if (onHardDelete) {
+                                  menuItems.push("---");
+                                  menuItems.push({label:"Delete", danger:true, action:()=>{
+                                    if(window.confirm("Permanently delete this transaction? This cannot be undone.")) onHardDelete(t.id);
+                                  }});
+                                }
+                                return <RowActionsMenu items={menuItems}/>;
+                              })()
+                          }
                         </td>
                       </tr>
                     );
