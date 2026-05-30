@@ -686,6 +686,25 @@ const styles = `
     .stat-value       { font-size:15px; }
   }
 
+  /* ── Transaction Card ─────────────────────────────────────────────────── */
+  .txn-card-modal{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);width:min(860px,96vw);max-height:92vh;overflow:hidden;display:flex;flex-direction:column;}
+  .txn-card-top{display:flex;align-items:flex-start;gap:24px;padding:22px 24px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+  .txn-card-fields{display:flex;gap:18px;flex:1;flex-wrap:wrap;align-items:flex-end;}
+  .txn-card-field{display:flex;flex-direction:column;gap:4px;}
+  .txn-card-field label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;font-family:'DM Mono',monospace;}
+  .txn-card-field input,.txn-card-field select{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:7px 11px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;outline:none;}
+  .txn-card-field input:focus,.txn-card-field select:focus{border-color:var(--accent);}
+  .txn-card-amount{text-align:right;flex-shrink:0;}
+  .txn-card-amount-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;font-family:'DM Mono',monospace;margin-bottom:4px;}
+  .txn-card-amount-value{font-family:'DM Serif Display',serif;font-size:30px;color:var(--text);}
+  .txn-card-lines{flex:1;overflow-y:auto;min-height:0;}
+  .txn-card-lines table{width:100%;border-collapse:collapse;}
+  .txn-card-lines th{background:var(--surface2);border-bottom:1px solid var(--border);padding:8px 12px;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;font-family:'DM Mono',monospace;font-weight:400;text-align:left;}
+  .txn-card-lines td{padding:5px 6px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  .txn-card-line-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:5px 9px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;outline:none;}
+  .txn-card-line-input:focus{border-color:var(--accent);}
+  .txn-card-footer{flex-shrink:0;padding:13px 22px;border-top:1px solid var(--border);background:var(--surface2);display:flex;align-items:center;gap:8px;}
+
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1315,7 +1334,7 @@ function JEEditModal({ je, accounts, onSave, onDelete, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // DRILL-DOWN MODAL  (click an account line to see transactions)
 // ─────────────────────────────────────────────────────────────────────────────
-function DrillRowEditable({ t, isDebit, isCredit, abs, counterpart, running, isExcluded, onUpdate, onDelete, onExclude, onEditJE }) {
+function DrillRowEditable({ t, isDebit, isCredit, abs, counterpart, running, isExcluded, onUpdate, onDelete, onExclude, onEditJE, onOpenCard }) {
   const [editing, setEditing] = useState(false);
   const [editDate, setEditDate] = useState(t.date||"");
   const [editDesc, setEditDesc] = useState(t.description||"");
@@ -1355,17 +1374,22 @@ function DrillRowEditable({ t, isDebit, isCredit, abs, counterpart, running, isE
       <td style={{...p,textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:isCredit?"var(--purple)":"var(--text3)",overflow:"hidden"}}>{isCredit?fmt(abs):""}</td>
       <td style={{...p,textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:"var(--text)",overflow:"hidden"}}>{fmt(running)}</td>
       <td style={{...p,whiteSpace:"nowrap"}}>
-        {t.isJE
-          ? <button className="drill-je-btn" onClick={()=>onEditJE&&onEditJE(t.jeId)}>✎ JE</button>
-          : onUpdate&&<button className="drill-edit-btn" onClick={()=>setEditing(true)}>Edit</button>
-        }
+        <div style={{display:"flex",gap:4,alignItems:"center"}}>
+          {t.isJE
+            ? <button className="drill-je-btn" onClick={()=>onEditJE&&onEditJE(t.jeId)}>✎ JE</button>
+            : <>
+                {onOpenCard && <button className="drill-edit-btn" style={{color:"var(--blue)"}} onClick={()=>onOpenCard(t)}>Open</button>}
+                {onUpdate    && <button className="drill-edit-btn" onClick={()=>setEditing(true)}>Edit</button>}
+              </>
+          }
+        </div>
       </td>
     </tr>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-function DrillModal({ account, transactions, manualJEs, allAccounts, startDate, endDate, onClose, onUpdate, onDelete, onExclude, excludedTxns, onEditJE }) {
+function DrillModal({ account, transactions, manualJEs, allAccounts, startDate, endDate, onClose, onUpdate, onDelete, onExclude, excludedTxns, onEditJE, onOpenCard }) {
   const acctById = Object.fromEntries(allAccounts.map(a=>[a.id,a]));
   const [editingJE, setEditingJE] = useState(null);
   const [selected, setSelected] = useState(new Set());
@@ -1533,7 +1557,7 @@ function DrillModal({ account, transactions, manualJEs, allAccounts, startDate, 
                       counterpart={counterpart} running={running}
                       isExcluded={excludedTxns?.has(t.id)}
                       onUpdate={onUpdate} onDelete={onDelete} onExclude={onExclude}
-                      onEditJE={handleEditJE}
+                      onEditJE={handleEditJE} onOpenCard={onOpenCard}
                     />
                   ))}
                 </tbody>
@@ -2146,20 +2170,185 @@ function ResizeTh({ width, onResize, children, style={} }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSACTION TABLE
 // ─────────────────────────────────────────────────────────────────────────────
-function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manualJEs, onClassify, onSplit, onMatchTransfer, onDelete, onExclude, excludedTxns, onUpdate, rules, onApplyRules, onEditJE, onManualReconcile, manualRecons }) {
-  const [selected,      setSelected]      = useState(new Set());
-  const [search,        setSearch]        = useState("");
-  const [section,       setSection]       = useState("uncategorized");
-  const [currentPage,   setCurrentPage]   = useState(1);
-  const [pageSize,      setPageSize]      = useState(25);
+// ─────────────────────────────────────────────────────────────────────────────
+// TRANSACTION CARD  (QuickBooks-style bill/check form)
+// ─────────────────────────────────────────────────────────────────────────────
+function TxnCard({ transaction, accounts, paymentAccounts, onSave, onHardDelete, onClose }) {
+  const [payee,    setPayee]    = useState(transaction.description || "");
+  const [date,     setDate]     = useState(transaction.date || "");
+  const [sourceId, setSourceId] = useState(
+    transaction.sourceId || (paymentAccounts[0]?.id || "")
+  );
+  const [confirmDel, setConfirmDel] = useState(false);
+
+  const mkLine = () => ({ id: Math.random().toString(36).slice(2), accountId: "", description: "", amount: "" });
+
+  const [lines, setLines] = useState(() => {
+    if (transaction.splits && transaction.splits.length > 0) {
+      return transaction.splits.map(s => ({
+        id:          s.id || Math.random().toString(36).slice(2),
+        accountId:   s.accountId || "",
+        description: s.description || "",
+        amount:      String(Math.abs(s.amount) || ""),
+      }));
+    }
+    return [{
+      id:          Math.random().toString(36).slice(2),
+      accountId:   transaction.accountId || "",
+      description: "",
+      amount:      String(Math.abs(transaction.amount) || ""),
+    }];
+  });
+
+  const setField = (id, field, val) => setLines(p => p.map(l => l.id === id ? {...l, [field]: val} : l));
+  const addLine  = () => setLines(p => [...p, mkLine()]);
+  const dropLine = id => setLines(p => p.length > 1 ? p.filter(l => l.id !== id) : p);
+
+  const total     = Math.abs(transaction.amount);
+  const lineTotal = lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+  const balanced  = lines.length === 1 || Math.abs(lineTotal - total) < 0.005;
+
+  useEffect(() => {
+    const h = e => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  const handleSave = () => {
+    const valid = lines.filter(l => l.accountId && parseFloat(l.amount) > 0);
+    if (valid.length === 0 || !balanced) return;
+    const changes = {
+      description: payee,
+      date,
+      sourceId,
+      accountId: valid[0].accountId,
+      splits: valid.length > 1 ? valid.map(l => ({
+        id:          l.id,
+        accountId:   l.accountId,
+        amount:      parseFloat(l.amount),
+        description: l.description,
+      })) : null,
+    };
+    onSave(transaction.id, changes);
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="txn-card-modal" onClick={e => e.stopPropagation()}>
+
+        {/* ── Top: payee / account / date / amount ── */}
+        <div className="txn-card-top">
+          <div className="txn-card-fields">
+            <div className="txn-card-field" style={{flex:"2 1 200px"}}>
+              <label>Payee</label>
+              <input type="text" value={payee} onChange={e => setPayee(e.target.value)} style={{minWidth:200}}/>
+            </div>
+            <div className="txn-card-field" style={{flex:"2 1 170px"}}>
+              <label>Payment Account</label>
+              <select value={sourceId} onChange={e => setSourceId(e.target.value)}>
+                {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+            <div className="txn-card-field" style={{flex:"0 0 150px"}}>
+              <label>Payment Date</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)}/>
+            </div>
+          </div>
+          <div className="txn-card-amount">
+            <div className="txn-card-amount-label">Amount</div>
+            <div className="txn-card-amount-value">{fmt(total)}</div>
+          </div>
+        </div>
+
+        {/* ── Lines table ── */}
+        <div className="txn-card-lines">
+          <table>
+            <thead><tr>
+              <th style={{width:32,textAlign:"center"}}>#</th>
+              <th style={{width:"40%"}}>Category</th>
+              <th>Description</th>
+              <th style={{width:130,textAlign:"right"}}>Amount</th>
+              <th style={{width:34}}></th>
+            </tr></thead>
+            <tbody>
+              {lines.map((l, idx) => (
+                <tr key={l.id}>
+                  <td style={{textAlign:"center",color:"var(--text3)",fontSize:12}}>{idx + 1}</td>
+                  <td>
+                    <AccountCombo value={l.accountId || null} accounts={accounts}
+                      onChange={id => setField(l.id, "accountId", id || "")}/>
+                  </td>
+                  <td>
+                    <input type="text" className="txn-card-line-input"
+                      value={l.description} placeholder={payee || "Description…"}
+                      onChange={e => setField(l.id, "description", e.target.value)}/>
+                  </td>
+                  <td>
+                    <input type="number" className="txn-card-line-input" min="0" step="0.01"
+                      value={l.amount} placeholder="0.00"
+                      onChange={e => setField(l.id, "amount", e.target.value)}
+                      style={{textAlign:"right",fontFamily:"DM Mono,monospace"}}/>
+                  </td>
+                  <td style={{textAlign:"center"}}>
+                    <button onClick={() => dropLine(l.id)}
+                      style={{background:"none",border:"none",color:"var(--text3)",cursor:"pointer",fontSize:16,lineHeight:1,padding:"2px 5px"}}>×</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px 12px",borderTop:"1px solid var(--border)"}}>
+            <button className="btn btn-ghost btn-sm" onClick={addLine}>+ Add line</button>
+            {lines.length > 1 && (
+              <span style={{fontSize:12,fontFamily:"DM Mono,monospace",
+                color: balanced ? "var(--green)" : "var(--red)"}}>
+                {balanced ? "✓ Balanced" : `Unbalanced: ${fmt(Math.abs(lineTotal - total))}`}
+              </span>
+            )}
+            <span style={{marginLeft:"auto",fontFamily:"DM Mono,monospace",fontSize:13,fontWeight:600,color:"var(--text)"}}>
+              Total &nbsp; {fmt(total)}
+            </span>
+          </div>
+        </div>
+
+        {/* ── Footer ── */}
+        <div className="txn-card-footer">
+          {confirmDel
+            ? <span style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:13,color:"var(--text2)"}}>Permanently delete this transaction?</span>
+                <button className="btn btn-sm" style={{background:"var(--red)",color:"#fff",border:"none"}}
+                  onClick={() => { onHardDelete(transaction.id); onClose(); }}>Yes, delete</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDel(false)}>Cancel</button>
+              </span>
+            : <button className="btn btn-danger btn-sm" onClick={() => setConfirmDel(true)}>Delete</button>
+          }
+          <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" disabled={!balanced} onClick={handleSave}>Save</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manualJEs, onClassify, onSplit, onMatchTransfer, onDelete, onExclude, excludedTxns, onUpdate, rules, onApplyRules, onEditJE, onManualReconcile, manualRecons, onOpenCard, onHardDelete }) {
+  const [selected,          setSelected]          = useState(new Set());
+  const [search,            setSearch]            = useState("");
+  const [section,           setSection]           = useState("uncategorized");
+  const [currentPage,       setCurrentPage]       = useState(1);
+  const [pageSize,          setPageSize]          = useState(25);
   const [showBulkModal,     setShowBulkModal]     = useState(false);
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
   const [confirmBulkDel,    setConfirmBulkDel]    = useState(false);
-  const [editingId,     setEditingId]     = useState(null);
-  const [pendingQueue,  setPendingQueue]  = useState({});
-  const [confirmDelId,  setConfirmDelId]  = useState(null);
-  const [editingDescId, setEditingDescId] = useState(null);
-  const [editingJE,     setEditingJE]     = useState(null);
+  const [editingId,         setEditingId]         = useState(null);
+  const [pendingQueue,      setPendingQueue]      = useState({});
+  const [confirmDelId,      setConfirmDelId]      = useState(null);
+  const [confirmHardDelId,  setConfirmHardDelId]  = useState(null);
+  const [editingDescId,     setEditingDescId]     = useState(null);
+  const [editingJE,         setEditingJE]         = useState(null);
   const [filterDateFrom,setFilterDateFrom]= useState("");
   const [filterDateTo,  setFilterDateTo]  = useState("");
   const [filterRecon,   setFilterRecon]   = useState("all");
@@ -2366,33 +2555,27 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
       {selected.size>0 && (
         <div className="bulk-bar">
           <span className="bulk-count">{selected.size} selected</span>
-          <button className="btn btn-ghost btn-sm" onClick={()=>setShowBulkModal(true)}>
-            📂 Classify
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={()=>setShowBulkEditModal(true)}>
-            ✎ Edit
-          </button>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setShowBulkModal(true)}>📂 Classify</button>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setShowBulkEditModal(true)}>✎ Edit</button>
           {section==="uncategorized" && (
-            <button className="btn btn-ghost btn-sm" onClick={()=>{ [...selected].forEach(id=>onExclude&&onExclude(id, true)); setSelected(new Set()); }}>
-              Exclude
-            </button>
+            <button className="btn btn-ghost btn-sm" onClick={()=>{ [...selected].forEach(id=>onExclude&&onExclude(id, true)); setSelected(new Set()); }}>Exclude</button>
           )}
           {section!=="uncategorized" && (confirmBulkDel
             ? <span style={{display:"flex",alignItems:"center",gap:6}}>
-                <span style={{fontSize:12,color:"var(--text2)"}}>{section==="excluded"?"Restore":"Uncategorize"} {selected.size} transactions?</span>
+                <span style={{fontSize:12,color:"var(--text2)"}}>{section==="excluded"?"Restore":"Uncategorize"} {selected.size}?</span>
                 <button className="btn btn-sm" style={{background:"var(--red)",color:"#fff",border:"none"}}
-                  onClick={()=>{ [...selected].forEach(id=>onDelete&&onDelete(id)); setSelected(new Set()); setConfirmBulkDel(false); }}>
-                  Yes
-                </button>
-                <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmBulkDel(false)}>Cancel</button>
+                  onClick={()=>{ [...selected].forEach(id=>onDelete&&onDelete(id)); setSelected(new Set()); setConfirmBulkDel(false); }}>Yes</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmBulkDel(false)}>No</button>
               </span>
-            : <button className="del-btn" style={{marginLeft:4}} onClick={()=>setConfirmBulkDel(true)}>
-                {section==="excluded" ? "Restore" : "Uncategorize"}
-              </button>
+            : <button className="del-btn" style={{marginLeft:4}} onClick={()=>setConfirmBulkDel(true)}>{section==="excluded"?"Restore":"Uncategorize"}</button>
           )}
-          <button className="btn btn-ghost btn-sm" style={{marginLeft:"auto"}} onClick={()=>setSelected(new Set())}>
-            ✕ Clear
-          </button>
+          {onHardDelete && (
+            <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.3)",marginLeft:4}}
+              onClick={()=>{ if(window.confirm(`Permanently delete ${selected.size} transaction${selected.size!==1?"s":""}? This cannot be undone.`)){[...selected].forEach(id=>onHardDelete(id));setSelected(new Set());} }}>
+              🗑 Delete
+            </button>
+          )}
+          <button className="btn btn-ghost btn-sm" style={{marginLeft:"auto"}} onClick={()=>setSelected(new Set())}>✕ Clear</button>
         </div>
       )}
 
@@ -2641,24 +2824,42 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                             </>
                         }
                         <td style={{paddingLeft:4,whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
-                          <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                          <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"nowrap"}}>
                             {t.isJE && (
                               <button className="drill-je-btn" onClick={()=>{
                                 const je=(manualJEs||[]).find(e=>e.id===t.jeId);
                                 if(je) setEditingJE(je);
                               }}>✎ JE</button>
                             )}
+                            {/* Open card — Categorized + uncategorized (for splits) */}
+                            {!t.isJE && !isCounterpart && onOpenCard && (section==="categorized" || section==="uncategorized") && (
+                              <button className="del-btn" style={{color:"var(--blue)",borderColor:"rgba(96,165,250,.3)"}}
+                                onClick={()=>onOpenCard(t)}>{section==="uncategorized"?"Split":"Open"}</button>
+                            )}
+                            {/* Uncategorized: Exclude */}
                             {!t.isJE && !isCounterpart && section==="uncategorized" && (
                               <button className="del-btn" onClick={()=>onExclude&&onExclude(t.id, true)}>Exclude</button>
                             )}
+                            {/* Categorized / Excluded: Uncategorize or Restore */}
                             {!t.isJE && !isCounterpart && section!=="uncategorized" && (confirmDelId===t.id
                               ? <span style={{display:"flex",alignItems:"center",gap:5}}>
-                                <span style={{fontSize:11,color:"var(--text2)"}}>Sure?</span>
-                                <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.4)"}}
-                                  onClick={()=>{ onDelete&&onDelete(t.id); setConfirmDelId(null); }}>Yes</button>
-                                <button className="del-btn" onClick={()=>setConfirmDelId(null)}>No</button>
-                              </span>
-                              : <button className="del-btn" onClick={()=>setConfirmDelId(t.id)}>{section==="excluded" ? "Restore" : "Uncategorize"}</button>
+                                  <span style={{fontSize:11,color:"var(--text2)"}}>Sure?</span>
+                                  <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.4)"}}
+                                    onClick={()=>{ onDelete&&onDelete(t.id); setConfirmDelId(null); }}>Yes</button>
+                                  <button className="del-btn" onClick={()=>setConfirmDelId(null)}>No</button>
+                                </span>
+                              : <button className="del-btn" onClick={()=>setConfirmDelId(t.id)}>{section==="excluded"?"Restore":"Uncategorize"}</button>
+                            )}
+                            {/* All sections: hard Delete */}
+                            {!t.isJE && !isCounterpart && onHardDelete && (confirmHardDelId===t.id
+                              ? <span style={{display:"flex",alignItems:"center",gap:5}}>
+                                  <span style={{fontSize:11,color:"var(--red)"}}>Delete?</span>
+                                  <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.4)"}}
+                                    onClick={()=>{ onHardDelete(t.id); setConfirmHardDelId(null); }}>Yes</button>
+                                  <button className="del-btn" onClick={()=>setConfirmHardDelId(null)}>No</button>
+                                </span>
+                              : <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.25)"}}
+                                  onClick={()=>{ setConfirmHardDelId(t.id); setConfirmDelId(null); }}>Delete</button>
                             )}
                           </div>
                         </td>
@@ -2901,7 +3102,8 @@ function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete })
   const [memo,      setMemo]      = useState("");
   const [lines,     setLines]     = useState([mkLine(), mkLine()]);
   const [flash,     setFlash]     = useState(false);
-  const [editingId, setEditingId] = useState(null); // id of JE being edited
+  const [editingId, setEditingId] = useState(null);
+  const [jeCard,    setJeCard]    = useState(null);
 
   // Expose a way for parent to trigger editing an existing entry
   // (called via ref or by lifting state — we use a passed-in editTarget prop)
@@ -3052,6 +3254,7 @@ function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete })
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:12,color:"var(--green)",fontFamily:"DM Mono,monospace"}}>{fmt(dr)}</span>
+                    <button className="btn btn-ghost btn-sm" style={{color:"var(--blue)"}} onClick={()=>setJeCard(je)}>Open</button>
                     <button className="btn btn-ghost btn-sm" onClick={()=>startEdit(je)}>Edit</button>
                     {onDelete&&<button className="del-btn" onClick={()=>onDelete(je.id)}>Delete</button>}
                   </div>
@@ -3084,6 +3287,15 @@ function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete })
             );
           })}
         </div>
+      )}
+      {jeCard && (
+        <JEEditModal
+          je={jeCard}
+          accounts={accounts}
+          onSave={je=>{ onPost(je); setJeCard(null); }}
+          onDelete={id=>{ if(onDelete) onDelete(id); setJeCard(null); }}
+          onClose={()=>setJeCard(null)}
+        />
       )}
     </div>
   );
@@ -3694,6 +3906,7 @@ export default function FinanceApp() {
   const [customDarkTheme,       setCustomDarkTheme]       = useState({...DARK_REPORT_THEME});
   const [reportThemeMode,       setReportThemeMode]       = useState("light"); // "light" | "dark"
   const [splitTxn,        setSplitTxn]        = useState(null);
+  const [cardTxn,         setCardTxn]         = useState(null);
   const [globalSearch,    setGlobalSearch]    = useState("");
   const [showSearch,      setShowSearch]      = useState(false);
   const [showReportThemeEditor, setShowReportThemeEditor] = useState(false);
@@ -4178,6 +4391,17 @@ export default function FinanceApp() {
   const deleteTxn   = useCallback((id)=>{
     setExcludedTxns(prev=>{ const n=new Set(prev); n.delete(id); return n; });
     setTransactions(prev=>prev.map(t=>t.id===id?{...t, accountId:null, transferMatchId:null, splits:null, excluded:false}:t));
+    setTimeout(save,100);
+  },[save]);
+
+  const hardDeleteTxn = useCallback((id)=>{
+    setExcludedTxns(prev=>{ const n=new Set(prev); n.delete(id); return n; });
+    setTransactions(prev=>prev.filter(t=>t.id!==id));
+    setTimeout(save,100);
+  },[save]);
+
+  const handleCardSave = useCallback((id, changes)=>{
+    setTransactions(prev=>prev.map(t=>t.id===id?{...t,...changes}:t));
     setTimeout(save,100);
   },[save]);
 
@@ -4743,7 +4967,7 @@ export default function FinanceApp() {
                             const acct = t.accountId ? acctById2[t.accountId] : null;
                             return (
                               <div key={t.id} style={{padding:"9px 16px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}
-                                onClick={()=>{setActiveSrcId(t.sourceId||"all");setPage("classify");setShowSearch(false);setGlobalSearch("");}}>
+                                onClick={()=>{setCardTxn(t);setShowSearch(false);setGlobalSearch("");}}>
                                 <div style={{flex:1,minWidth:0}}>
                                   <div style={{fontSize:13,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</div>
                                   <div style={{fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginTop:1}}>{t.date}</div>
@@ -4920,6 +5144,8 @@ export default function FinanceApp() {
                       onSplit={txn=>setSplitTxn(txn)}
                       onMatchTransfer={matchTransfer}
                       onDelete={deleteTxn}
+                      onHardDelete={hardDeleteTxn}
+                      onOpenCard={setCardTxn}
                       onExclude={excludeTxn}
                       excludedTxns={excludedTxns}
                       onUpdate={updateTxn}
@@ -5383,6 +5609,13 @@ export default function FinanceApp() {
         onClose={()=>setShowReportThemeEditor(false)}/>}
       {splitTxn && <SplitModal transaction={splitTxn} accounts={activeAccounts}
         onSave={saveSplit} onClose={()=>setSplitTxn(null)}/>}
+      {cardTxn && <TxnCard
+        transaction={cardTxn}
+        accounts={activeAccounts}
+        paymentAccounts={tabList}
+        onSave={handleCardSave}
+        onHardDelete={hardDeleteTxn}
+        onClose={()=>setCardTxn(null)}/>}
       {(drillAccount||coaDrillAccount) && <DrillModal
         account={drillAccount||coaDrillAccount}
         transactions={transactions} manualJEs={manualJEs} allAccounts={accounts}
@@ -5392,6 +5625,7 @@ export default function FinanceApp() {
         onUpdate={updateTxn} onDelete={deleteTxn}
         onExclude={(id)=>excludeTxn(id, !excludedTxns.has(id))}
         excludedTxns={excludedTxns}
+        onOpenCard={setCardTxn}
         onEditJE={jeOrAction=>{
           if (jeOrAction?._delete) {
             setManualJEs(prev=>prev.filter(e=>e.id!==jeOrAction.id));
