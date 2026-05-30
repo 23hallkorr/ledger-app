@@ -1422,13 +1422,24 @@ function DrillModal({ account, transactions, manualJEs, allAccounts, startDate, 
     return ()=>document.removeEventListener("keydown",h);
   },[onClose]);
 
-  // Regular bank transactions for this account
-  const txns = transactions.filter(t =>
-    (t.accountId === account.id || t.sourceId === account.id) &&
-    !excludedTxns?.has(t.id) &&
-    !t.excluded &&
-    inRange(t.date, startDate, endDate)
-  );
+  // Regular bank transactions for this account.
+  // For matched transfers: if both legs are visible (the counterpart from another account
+  // AND the primary leg from this account), skip the counterpart to avoid double-counting.
+  const txns = transactions.filter(t => {
+    if (!(t.accountId === account.id || t.sourceId === account.id)) return false;
+    if (!t.accountId || excludedTxns?.has(t.id) || t.excluded) return false;
+    if (!inRange(t.date, startDate, endDate)) return false;
+    if (t.transferMatchId && t.accountId === account.id && t.sourceId !== account.id) {
+      const hasPrimaryLeg = transactions.some(t2 =>
+        t2.id !== t.id &&
+        t2.transferMatchId === t.transferMatchId &&
+        t2.sourceId === account.id &&
+        !excludedTxns?.has(t2.id) && !t2.excluded
+      );
+      if (hasPrimaryLeg) return false;
+    }
+    return true;
+  });
 
   // Synthetic transactions from manual journal entries
   // Each JE line that touches this account becomes a pseudo-transaction
@@ -4501,7 +4512,15 @@ export default function FinanceApp() {
   const journalEntries = useMemo(()=>{
     const txnEntries = [];
 
+    // For matched transfer pairs, only process one leg — both generate the identical
+    // journal entry (Debit counterpart / Credit source), so counting both doubles the effect.
+    const seenMatchIds = new Set();
+
     reportTxns.filter(t => t.accountId).forEach(t => {
+      if (t.transferMatchId) {
+        if (seenMatchIds.has(t.transferMatchId)) return;
+        seenMatchIds.add(t.transferMatchId);
+      }
       const srcAcct = t.sourceId ? acctById[t.sourceId] : null;
 
       // Split transaction — each split line posts independently
@@ -4997,9 +5016,14 @@ export default function FinanceApp() {
                 const q = globalSearch.toLowerCase();
                 const results = transactions.filter(t=>{
                   const descMatch = (t.description||"").toLowerCase().includes(q);
-                  const amtMatch  = String(Math.abs(t.amount||0)).includes(q) || fmt(t.amount).includes(q);
+                  const abs = Math.abs(t.amount||0);
+                  const amtMatch = abs.toFixed(2).includes(q) ||
+                    abs.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,",").includes(q) ||
+                    fmt(t.amount).includes(q);
                   return descMatch || amtMatch;
-                }).slice(0,25);
+                })
+                .sort((a,b)=>(b.date||"").localeCompare(a.date||""))
+                .slice(0,25);
                 const acctById2 = Object.fromEntries(accounts.map(a=>[a.id,a]));
                 return (
                   <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,background:"var(--surface)",border:"1px solid var(--border)",borderRadius:8,boxShadow:"0 8px 32px rgba(0,0,0,.25)",zIndex:200,maxHeight:360,overflowY:"auto"}}>
@@ -5013,7 +5037,7 @@ export default function FinanceApp() {
                             const acct = t.accountId ? acctById2[t.accountId] : null;
                             return (
                               <div key={t.id} style={{padding:"9px 16px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}
-                                onClick={()=>{setCardTxn(t);setShowSearch(false);setGlobalSearch("");}}>
+                                onClick={e=>{e.stopPropagation();setCardTxn(t);setShowSearch(false);setGlobalSearch("");}}>
                                 <div style={{flex:1,minWidth:0}}>
                                   <div style={{fontSize:13,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</div>
                                   <div style={{fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginTop:1}}>{t.date}</div>
