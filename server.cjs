@@ -30,6 +30,84 @@ const plaidConfig = new Configuration({
 });
 const plaid = new PlaidApi(plaidConfig);
 
+const daysAgo = (days) => {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+};
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+const plaidDescription = (t) =>
+  t.original_description || t.merchant_name || t.name || "";
+
+const toLedgerTxn = (t, sourceId) => ({
+  id:                   `plaid-${t.transaction_id}`,
+  plaidTransactionId:    t.transaction_id,
+  pendingTransactionId:  t.pending_transaction_id || null,
+  date:                 t.date,
+  description:          plaidDescription(t),
+  originalDescription:  t.original_description || null,
+  merchantName:         t.merchant_name || null,
+  plaidName:            t.name || null,
+  pending:              !!t.pending,
+  amount:               -(t.amount),
+  accountId:            null,
+  sourceId,
+  reconciled:           false,
+  excluded:             false,
+  splits:               null,
+});
+
+async function fetchRecentPlaidTransactions(pa, sourceId, days = 30) {
+  const recent = [];
+  let offset = 0;
+  const count = 500;
+  let total = Infinity;
+  while (offset < total) {
+    const response = await plaid.transactionsGet({
+      access_token: pa.accessToken,
+      start_date: daysAgo(days),
+      end_date: today(),
+      options: {
+        account_ids: [pa.plaidAccountId],
+        count,
+        offset,
+        include_original_description: true,
+      },
+    });
+    total = response.data.total_transactions;
+    recent.push(...response.data.transactions.map(t => toLedgerTxn(t, sourceId)));
+    offset += response.data.transactions.length;
+    if (!response.data.transactions.length) break;
+  }
+  return recent;
+}
+
+async function ensureTransactionColumns() {
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "reconciledAccts" TEXT[] DEFAULT '{}'`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "plaidTransactionId" TEXT`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "pendingTransactionId" TEXT`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "originalDescription" TEXT`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "merchantName" TEXT`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "plaidName" TEXT`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "pending" BOOLEAN DEFAULT false`
+  );
+}
+
 app.post("/api/plaid/link-token", async (req, res) => {
   try {
     const response = await plaid.linkTokenCreate({
@@ -77,33 +155,40 @@ app.post("/api/plaid/sync", async (req, res) => {
     const pa = await prisma.plaidAccount.findUnique({ where: { plaidAccountId } });
     if (!pa) return res.status(404).json({ error: "Plaid account not found" });
     let cursor = pa.cursor || "";
-    let added  = [], modified = [], hasMore = true;
+    let added  = [], modified = [], removed = [], hasMore = true;
     while (hasMore) {
       const syncRes = await plaid.transactionsSync({
         access_token: pa.accessToken,
         cursor: cursor || undefined,
+        options: { include_original_description: true },
       });
       const data = syncRes.data;
-      added    = [...added,    ...data.added];
-      modified = [...modified, ...data.modified];
+      added    = [...added,    ...(data.added || [])];
+      modified = [...modified, ...(data.modified || [])];
+      removed  = [...removed,  ...(data.removed || [])];
       hasMore  = data.has_more;
       cursor   = data.next_cursor;
     }
     await prisma.plaidAccount.update({ where: { plaidAccountId }, data: { cursor } });
     const sourceId = pa.mappedToId || plaidAccountId;
-    const txns = added.map(t => ({
-      id:          `plaid-${t.transaction_id}`,
-      date:        t.date,
-      description: t.merchant_name || t.name || "",
-      amount:      -(t.amount),
-      accountId:   null,
-      sourceId:    sourceId,
-      reconciled:  false,
-      excluded:    false,
-      splits:      null,
-    }));
-    console.log(`  Plaid sync: ${txns.length} new txns for ${plaidAccountId}`);
-    res.json({ ok: true, added: txns, modifiedCount: modified.length });
+    const txns = added.map(t => toLedgerTxn(t, sourceId));
+    const modifiedTxns = modified.map(t => toLedgerTxn(t, sourceId));
+    let recentTxns = [];
+    try {
+      recentTxns = await fetchRecentPlaidTransactions(pa, sourceId, 30);
+    } catch (lookbackErr) {
+      console.warn(`30-day Plaid lookback failed for ${plaidAccountId}:`, lookbackErr.response?.data || lookbackErr.message);
+    }
+    console.log(`  Plaid sync: ${txns.length} new, ${modifiedTxns.length} modified, ${recentTxns.length} recent txns for ${plaidAccountId}`);
+    res.json({
+      ok: true,
+      added: txns,
+      modified: modifiedTxns,
+      removed: removed.map(t => `plaid-${t.transaction_id}`),
+      recent: recentTxns,
+      modifiedCount: modifiedTxns.length,
+      removedCount: removed.length,
+    });
   } catch (e) {
     console.error("Plaid sync error:", e.response?.data || e.message);
     const errorCode = e.response?.data?.error_code || null;
@@ -194,9 +279,7 @@ app.get("/api/reset-reconciliations", async (req, res) => {
 // ── One-time migration ────────────────────────────────────────────────────────
 app.get("/api/run-migration", async (req, res) => {
   try {
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "reconciledAccts" TEXT[] DEFAULT '{}'`
-    );
+    await ensureTransactionColumns();
     await prisma.$executeRawUnsafe(
       `ALTER TABLE "ManualJE" ADD COLUMN IF NOT EXISTS "reconciledLines" TEXT[] DEFAULT '{}'`
     );
@@ -211,9 +294,7 @@ app.get("/api/data", async (req, res) => {
   try {
     // Ensure required columns exist
     try {
-      await prisma.$executeRawUnsafe(
-        `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "reconciledAccts" TEXT[] DEFAULT '{}'`
-      );
+      await ensureTransactionColumns();
       await prisma.$executeRawUnsafe(
         `ALTER TABLE "ManualJE" ADD COLUMN IF NOT EXISTS "reconciledLines" TEXT[] DEFAULT '{}'`
       );
@@ -249,6 +330,12 @@ app.get("/api/data", async (req, res) => {
         accountId: t.accountId ?? null, sourceId: t.sourceId ?? null,
         transferMatchId: t.transferMatchId ?? null, reconciled: t.reconciled,
         reconciledAccts: Array.isArray(t.reconciledAccts) ? t.reconciledAccts : [],
+        plaidTransactionId: t.plaidTransactionId ?? null,
+        pendingTransactionId: t.pendingTransactionId ?? null,
+        originalDescription: t.originalDescription ?? null,
+        merchantName: t.merchantName ?? null,
+        plaidName: t.plaidName ?? null,
+        pending: t.pending ?? false,
         splits: t.splits ?? null,
       })),
       accounts: accounts.map(a => ({
@@ -297,6 +384,8 @@ app.post("/api/data", async (req, res) => {
   console.log(`  POST /api/data WRITING — txns:${transactions.length} accounts:${accounts.length}`);
 
   try {
+    try { await ensureTransactionColumns(); } catch(migErr) { console.warn("Transaction metadata migration skipped:", migErr.message); }
+
     const excludedSet = new Set(excludedTxns);
     const t0 = Date.now();
 
@@ -319,7 +408,13 @@ app.post("/api/data", async (req, res) => {
           sourceId: t.sourceId ?? null, transferMatchId: t.transferMatchId ?? null,
           reconciled: t.reconciled ?? false,
           reconciledAccts: Array.isArray(t.reconciledAccts) ? t.reconciledAccts : [],
-          excluded: excludedSet.has(t.id),
+          excluded: excludedSet.has(t.id) || t.excluded === true,
+          plaidTransactionId: t.plaidTransactionId ?? (String(t.id || "").startsWith("plaid-") ? String(t.id).slice(6) : null),
+          pendingTransactionId: t.pendingTransactionId ?? null,
+          originalDescription: t.originalDescription ?? null,
+          merchantName: t.merchantName ?? null,
+          plaidName: t.plaidName ?? null,
+          pending: t.pending ?? false,
           splits: t.splits ?? undefined,
         })),
       }),

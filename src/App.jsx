@@ -753,6 +753,61 @@ function applyRules(txn, rules) {
   return null;
 }
 
+function plaidId(txn) {
+  return txn?.plaidTransactionId || (String(txn?.id || "").startsWith("plaid-") ? String(txn.id).slice(6) : null);
+}
+
+function mergePlaidTransactions(existing, incoming, rules) {
+  const byId = new Map(existing.map((t, i) => [t.id, i]));
+  const byPlaidId = new Map();
+  existing.forEach((t, i) => {
+    const id = plaidId(t);
+    if (id) byPlaidId.set(id, i);
+  });
+  const next = [...existing];
+  let imported = 0;
+  let updated = 0;
+
+  incoming.forEach(raw => {
+    if (!raw?.id) return;
+    const pendingId = raw.pendingTransactionId ? `plaid-${raw.pendingTransactionId}` : null;
+    const matchIndex = byId.has(raw.id)
+      ? byId.get(raw.id)
+      : (pendingId && byId.has(pendingId) ? byId.get(pendingId) : byPlaidId.get(raw.plaidTransactionId));
+
+    if (matchIndex !== undefined) {
+      const current = next[matchIndex];
+      const accountId = current.accountId || applyRules(raw, rules);
+      next[matchIndex] = {
+        ...current,
+        ...raw,
+        accountId: accountId || null,
+        reconciled: current.reconciled ?? raw.reconciled ?? false,
+        reconciledAccts: current.reconciledAccts ?? raw.reconciledAccts ?? [],
+        transferMatchId: current.transferMatchId ?? raw.transferMatchId ?? null,
+        excluded: current.excluded ?? raw.excluded ?? false,
+        splits: current.splits ?? raw.splits ?? null,
+      };
+      byId.delete(current.id);
+      byId.set(raw.id, matchIndex);
+      const id = plaidId(raw);
+      if (id) byPlaidId.set(id, matchIndex);
+      updated += 1;
+      return;
+    }
+
+    const matched = applyRules(raw, rules);
+    const txn = matched ? {...raw, accountId: matched} : raw;
+    byId.set(txn.id, next.length);
+    const id = plaidId(txn);
+    if (id) byPlaidId.set(id, next.length);
+    next.push(txn);
+    imported += 1;
+  });
+
+  return { transactions: next, imported, updated };
+}
+
 function inRange(dateStr, start, end) {
   if (!dateStr) return true;
   if (!start && !end) return true;
@@ -1346,6 +1401,8 @@ function DrillModal({ account, transactions, manualJEs, allAccounts, startDate, 
   // Regular bank transactions for this account
   const txns = transactions.filter(t =>
     (t.accountId === account.id || t.sourceId === account.id) &&
+    !excludedTxns?.has(t.id) &&
+    !t.excluded &&
     inRange(t.date, startDate, endDate)
   );
 
@@ -2089,7 +2146,7 @@ function ResizeTh({ width, onResize, children, style={} }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSACTION TABLE
 // ─────────────────────────────────────────────────────────────────────────────
-function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manualJEs, onClassify, onSplit, onMatchTransfer, onDelete, onUpdate, rules, onApplyRules, onEditJE, onManualReconcile, manualRecons }) {
+function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manualJEs, onClassify, onSplit, onMatchTransfer, onDelete, onExclude, excludedTxns, onUpdate, rules, onApplyRules, onEditJE, onManualReconcile, manualRecons }) {
   const [selected,      setSelected]      = useState(new Set());
   const [search,        setSearch]        = useState("");
   const [section,       setSection]       = useState("uncategorized");
@@ -2118,8 +2175,10 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
     setCurrentPage(1);
   };
 
-  const uncategorized = useMemo(()=>transactions.filter(t=>!t.accountId&&!pendingQueue[t.id]),[transactions,pendingQueue]);
-  const categorized   = useMemo(()=>transactions.filter(t=> t.accountId || !!pendingQueue[t.id]),[transactions,pendingQueue]);
+  const isExcluded = useCallback((t)=>excludedTxns?.has(t.id) || t.excluded,[excludedTxns]);
+  const uncategorized = useMemo(()=>transactions.filter(t=>!isExcluded(t)&&!t.accountId&&!pendingQueue[t.id]),[transactions,pendingQueue,isExcluded]);
+  const categorized   = useMemo(()=>transactions.filter(t=>!isExcluded(t)&&(t.accountId || !!pendingQueue[t.id])),[transactions,pendingQueue,isExcluded]);
+  const excluded      = useMemo(()=>transactions.filter(t=>isExcluded(t)),[transactions,isExcluded]);
 
   // Build JE rows for this source account's register
   const jeRows = useMemo(()=>{
@@ -2143,7 +2202,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
     );
   },[sourceAccount, manualJEs]);
 
-  const pool = section==="uncategorized" ? uncategorized : [...categorized,...jeRows];
+  const pool = section==="uncategorized" ? uncategorized : section==="excluded" ? excluded : [...categorized,...jeRows];
 
   const filtered = useMemo(()=>{
     const q = search.toLowerCase();
@@ -2223,7 +2282,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
   // Move editing focus to the next unclassified+unstaged row, handling pagination
   const advanceToNext = (currentId) => {
     // Build the ordered list of still-uncategorized rows (same order as the table)
-    const available = transactions.filter(t => !t.accountId && !pendingQueue[t.id]);
+    const available = transactions.filter(t => !isExcluded(t) && !t.accountId && !pendingQueue[t.id]);
     const idx = available.findIndex(t => t.id === currentId);
     const next = available[idx + 1] || null;
     setEditingId(next ? next.id : null);
@@ -2274,6 +2333,10 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
           Categorized
           <span className="tab-badge" style={{background:"rgba(74,222,128,.15)",color:"var(--green)"}}>{categorized.length}</span>
         </div>
+        <div className={`tab${section==="excluded"?" active":""}`} onClick={()=>{setSection("excluded");setCurrentPage(1);setSelected(new Set());setEditingId(null);}}>
+          Excluded
+          {excluded.length>0&&<span className="tab-badge" style={{background:"rgba(255,82,82,.15)",color:"var(--red)"}}>{excluded.length}</span>}
+        </div>
       </div>
 
       {/* Toolbar */}
@@ -2309,19 +2372,24 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
           <button className="btn btn-ghost btn-sm" onClick={()=>setShowBulkEditModal(true)}>
             ✎ Edit
           </button>
-          {confirmBulkDel
+          {section==="uncategorized" && (
+            <button className="btn btn-ghost btn-sm" onClick={()=>{ [...selected].forEach(id=>onExclude&&onExclude(id, true)); setSelected(new Set()); }}>
+              Exclude
+            </button>
+          )}
+          {section!=="uncategorized" && (confirmBulkDel
             ? <span style={{display:"flex",alignItems:"center",gap:6}}>
-                <span style={{fontSize:12,color:"var(--text2)"}}>Delete {selected.size} transactions?</span>
+                <span style={{fontSize:12,color:"var(--text2)"}}>{section==="excluded"?"Restore":"Uncategorize"} {selected.size} transactions?</span>
                 <button className="btn btn-sm" style={{background:"var(--red)",color:"#fff",border:"none"}}
                   onClick={()=>{ [...selected].forEach(id=>onDelete&&onDelete(id)); setSelected(new Set()); setConfirmBulkDel(false); }}>
-                  Yes, Delete
+                  Yes
                 </button>
                 <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmBulkDel(false)}>Cancel</button>
               </span>
             : <button className="del-btn" style={{marginLeft:4}} onClick={()=>setConfirmBulkDel(true)}>
-                🗑 Delete
+                {section==="excluded" ? "Restore" : "Uncategorize"}
               </button>
-          }
+          )}
           <button className="btn btn-ghost btn-sm" style={{marginLeft:"auto"}} onClick={()=>setSelected(new Set())}>
             ✕ Clear
           </button>
@@ -2362,8 +2430,8 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
 
       {pool.length===0
         ? <div className="empty">
-            <div className="empty-icon">{section==="uncategorized"?"✅":"📋"}</div>
-            <div className="empty-title">{section==="uncategorized"?"All transactions are categorized!":"No categorized transactions yet."}</div>
+            <div className="empty-icon">{section==="uncategorized"?"Done":section==="excluded"?"Excluded":"None"}</div>
+            <div className="empty-title">{section==="uncategorized"?"All transactions are categorized!":section==="excluded"?"No excluded transactions yet.":"No categorized transactions yet."}</div>
           </div>
         : <>
             <div className="txn-table-wrap">
@@ -2580,14 +2648,17 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                 if(je) setEditingJE(je);
                               }}>✎ JE</button>
                             )}
-                            {!t.isJE && !isCounterpart && (confirmDelId===t.id
+                            {!t.isJE && !isCounterpart && section==="uncategorized" && (
+                              <button className="del-btn" onClick={()=>onExclude&&onExclude(t.id, true)}>Exclude</button>
+                            )}
+                            {!t.isJE && !isCounterpart && section!=="uncategorized" && (confirmDelId===t.id
                               ? <span style={{display:"flex",alignItems:"center",gap:5}}>
-                                  <span style={{fontSize:11,color:"var(--text2)"}}>Sure?</span>
-                                  <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.4)"}}
-                                    onClick={()=>{ onDelete&&onDelete(t.id); setConfirmDelId(null); }}>Yes</button>
-                                  <button className="del-btn" onClick={()=>setConfirmDelId(null)}>No</button>
-                                </span>
-                              : <button className="del-btn" onClick={()=>setConfirmDelId(t.id)}>Delete</button>
+                                <span style={{fontSize:11,color:"var(--text2)"}}>Sure?</span>
+                                <button className="del-btn" style={{color:"var(--red)",borderColor:"rgba(255,82,82,.4)"}}
+                                  onClick={()=>{ onDelete&&onDelete(t.id); setConfirmDelId(null); }}>Yes</button>
+                                <button className="del-btn" onClick={()=>setConfirmDelId(null)}>No</button>
+                              </span>
+                              : <button className="del-btn" onClick={()=>setConfirmDelId(t.id)}>{section==="excluded" ? "Restore" : "Uncategorize"}</button>
                             )}
                           </div>
                         </td>
@@ -3048,7 +3119,7 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   // Combine bank transactions + JE lines for this account
   const allItems = useMemo(()=>{
     const txnItems = transactions
-      .filter(t=>(t.sourceId===account.id||t.accountId===account.id) && t.accountId)
+      .filter(t=>(t.sourceId===account.id||t.accountId===account.id) && t.accountId && !t.excluded)
       .filter(t=>{
         // Hide if manually reconciled via toggle
         if ((manualRecons[account.id]||[]).includes(t.id)) return false;
@@ -3124,7 +3195,7 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   // Add manually reconciled transactions (toggled via R button, stored in manualRecons)
   const manualTxns = transactions
     .filter(t => {
-      if (!(t.sourceId===account.id || t.accountId===account.id) || !t.accountId) return false;
+      if (!(t.sourceId===account.id || t.accountId===account.id) || !t.accountId || t.excluded) return false;
       return (manualRecons[account.id]||[]).includes(t.id);
     });
 
@@ -3855,25 +3926,29 @@ export default function FinanceApp() {
         if (data.errorCode) {
           setSyncErrors(prev => ({...prev, [plaidAccountId]: data.errorCode}));
         }
-        return 0;
+        return { imported: 0, updated: 0, checked: 0, removed: 0 };
       }
       // Clear any previous error for this account on success
       setSyncErrors(prev => { const n={...prev}; delete n[plaidAccountId]; return n; });
-      if (data.added?.length) {
-        const remapped = data.added.map(t => ({...t, sourceId}));
-        const withRules = remapped.map(t => {
-          const matched = applyRules(t, rules);
-          return matched ? {...t, accountId: matched} : t;
-        });
+      const incoming = [
+        ...(data.added || []),
+        ...(data.modified || []),
+        ...(data.recent || []),
+      ].map(t => ({...t, sourceId}));
+      let imported = 0;
+      let updated = 0;
+      if (incoming.length) {
         setTransactions(prev => {
-          const ids = new Set(prev.map(t=>t.id));
-          return [...prev, ...withRules.filter(t=>!ids.has(t.id))];
+          const merged = mergePlaidTransactions(prev, incoming, rules);
+          imported = merged.imported;
+          updated = merged.updated;
+          return merged.transactions;
         });
       }
-      return data.added?.length || 0;
+      return { imported, updated, checked: data.recent?.length || 0, removed: data.removedCount || 0 };
     } catch(e) {
       console.error("Sync failed:", e);
-      return 0;
+      return { imported: 0, updated: 0, checked: 0, removed: 0 };
     }
   };
 
@@ -3912,13 +3987,15 @@ export default function FinanceApp() {
           return syncPlaidAccountToSource(pa.plaidAccountId, sourceId);
         })
       );
-      const total = results.reduce((sum, c) => sum + (c || 0), 0);
+      const total = results.reduce((sum, r) => sum + (r?.imported || 0), 0);
+      const updated = results.reduce((sum, r) => sum + (r?.updated || 0), 0);
+      const checked = results.reduce((sum, r) => sum + (r?.checked || 0), 0);
       await fetchPlaidBalances();
-      if (total > 0) {
+      if (total > 0 || updated > 0) {
         setTimeout(save, 3000);
-        alert(`Imported ${total} new transaction${total!==1?"s":""}. Saving…`);
+        alert(`Checked ${checked} recent bank transaction${checked!==1?"s":""}. Imported ${total} missing transaction${total!==1?"s":""} and refreshed ${updated} existing transaction${updated!==1?"s":""}. Saving...`);
       } else {
-        alert("No new transactions found.");
+        alert(`Checked ${checked} recent bank transaction${checked!==1?"s":""}. No missing transactions found.`);
       }
     } finally {
       setPlaidSyncing(false);
@@ -4070,8 +4147,24 @@ export default function FinanceApp() {
 
   const activeAccounts = useMemo(()=>accounts.filter(a=>!a.inactive),[accounts]);
 
-  const excludeTxn  = useCallback((id)=>{ setExcludedTxns(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n;}); setTimeout(save,100); },[save]);
-  const deleteTxn   = useCallback((id)=>{ setTransactions(prev=>prev.filter(t=>t.id!==id)); setTimeout(save,100); },[save]);
+  const excludeTxn  = useCallback((id, exclude = true)=>{
+    setExcludedTxns(prev=>{
+      const n=new Set(prev);
+      exclude ? n.add(id) : n.delete(id);
+      return n;
+    });
+    if (exclude) {
+      setTransactions(prev=>prev.map(t=>t.id===id?{...t, accountId:null, transferMatchId:null, splits:null, excluded:true}:t));
+    } else {
+      setTransactions(prev=>prev.map(t=>t.id===id?{...t, excluded:false}:t));
+    }
+    setTimeout(save,100);
+  },[save]);
+  const deleteTxn   = useCallback((id)=>{
+    setExcludedTxns(prev=>{ const n=new Set(prev); n.delete(id); return n; });
+    setTransactions(prev=>prev.map(t=>t.id===id?{...t, accountId:null, transferMatchId:null, splits:null, excluded:false}:t));
+    setTimeout(save,100);
+  },[save]);
 
   const handlePreCatImport = useCallback((rows) => {
     setTransactions(prev => {
@@ -4116,7 +4209,7 @@ export default function FinanceApp() {
 
   // All classified txns filtered by date range (for reports)
   const reportTxns = useMemo(()=>{
-    return transactions.filter(t=>t.accountId&&!excludedTxns.has(t.id)&&inRange(t.date,startDate,endDate));
+    return transactions.filter(t=>t.accountId&&!excludedTxns.has(t.id)&&!t.excluded&&inRange(t.date,startDate,endDate));
   },[transactions,startDate,endDate,excludedTxns]);
 
   // Build journal entries for all classified+dated transactions + manual JEs
@@ -4217,7 +4310,7 @@ export default function FinanceApp() {
   const totalEquity     = equity.reduce((s,a)=>s+a.balance,0);
   const cfSections      = CF_SECTIONS.map(sec=>({name:sec,items:activeAccounts.filter(a=>a.cashFlow===sec).map(a=>({...a,balance:totals[a.id]||0})).filter(a=>a.balance!==0)}));
 
-  const unclassifiedCount = transactions.filter(t=>!t.accountId).length;
+  const unclassifiedCount = transactions.filter(t=>!t.accountId&&!excludedTxns.has(t.id)&&!t.excluded).length;
 
   // Clickable account row helper
   const DrillRow = ({a, displayAmt, amtClass, indent}) => (
@@ -4674,7 +4767,7 @@ export default function FinanceApp() {
                         <tbody>
                           {sources.map(s=>{
                             const stxns = transactions.filter(t=>t.sourceId===s.id);
-                            const unc   = stxns.filter(t=>!t.accountId).length;
+                            const unc   = stxns.filter(t=>!t.accountId&&!excludedTxns.has(t.id)&&!t.excluded).length;
                             return (
                               <tr key={s.id}>
                                 <td style={{color:"var(--text)",fontWeight:500}}>{s.name}</td>
@@ -4734,7 +4827,7 @@ export default function FinanceApp() {
                   <div className="bank-cards">
                     {tabList.map(s=>{
                       const isActive = activeSrcId===s.id;
-                      const unc = transactions.filter(t=>t.sourceId===s.id&&!t.accountId).length;
+                      const unc = transactions.filter(t=>t.sourceId===s.id&&!excludedTxns.has(t.id)&&!t.excluded&&!t.accountId).length;
                       const acct = acctById[s.id];
                       // Check if this account has a Plaid connection
                       const hasPlaid = plaidAccounts.some(p=>(p.mappedToId||p.mappedTo)===s.id);
@@ -4812,6 +4905,8 @@ export default function FinanceApp() {
                       onSplit={txn=>setSplitTxn(txn)}
                       onMatchTransfer={matchTransfer}
                       onDelete={deleteTxn}
+                      onExclude={excludeTxn}
+                      excludedTxns={excludedTxns}
                       onUpdate={updateTxn}
                       rules={rules}
                       onApplyRules={applyAllRules}
@@ -5280,7 +5375,7 @@ export default function FinanceApp() {
         endDate={trendDrillPeriod ? periodEnd(trendDrillPeriod) : endDate}
         onClose={()=>{setDrillAccount(null);setCoaDrillAccount(null);setTrendDrillPeriod(null);}}
         onUpdate={updateTxn} onDelete={deleteTxn}
-        onExclude={(id)=>setExcludedTxns(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n;})}
+        onExclude={(id)=>excludeTxn(id, !excludedTxns.has(id))}
         excludedTxns={excludedTxns}
         onEditJE={jeOrAction=>{
           if (jeOrAction?._delete) {

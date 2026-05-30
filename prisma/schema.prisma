@@ -19,6 +19,12 @@ model Transaction {
   reconciledAccts String[] @default([])
   excluded        Boolean  @default(false)
   splits          Json?
+  plaidTransactionId   String?
+  pendingTransactionId String?
+  originalDescription  String?
+  merchantName         String?
+  plaidName            String?
+  pending              Boolean @default(false)
   createdAt       DateTime @default(now())
 }
 
