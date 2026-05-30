@@ -2494,13 +2494,13 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
         av=(a.accountId?acctById2[a.accountId]?.name||"":"").toLowerCase();
         bv=(b.accountId?acctById2[b.accountId]?.name||"":"").toLowerCase();
       } else if (sortKey==="debit") {
-        const ea=getEntry(a), eb=getEntry(b);
-        av=ea&&ea.debitAcctId===sourceAccount?.id?ea.absAmount:0;
-        bv=eb&&eb.debitAcctId===sourceAccount?.id?eb.absAmount:0;
+        // Positive amounts appear in the Debit column
+        av = a.amount > 0 ? Math.abs(a.amount) : 0;
+        bv = b.amount > 0 ? Math.abs(b.amount) : 0;
       } else if (sortKey==="credit") {
-        const ea=getEntry(a), eb=getEntry(b);
-        av=ea&&ea.creditAcctId===sourceAccount?.id?ea.absAmount:0;
-        bv=eb&&eb.creditAcctId===sourceAccount?.id?eb.absAmount:0;
+        // Negative amounts appear in the Credit column
+        av = a.amount < 0 ? Math.abs(a.amount) : 0;
+        bv = b.amount < 0 ? Math.abs(b.amount) : 0;
       } else if (sortKey==="transfer") {
         av=a.transferMatchId?1:0; bv=b.transferMatchId?1:0;
       } else {
@@ -2730,11 +2730,10 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                   <col style={{width:34}}/>
                   <col style={{width:colWidths.date}}/>
                   <col/>{/* description fills remaining width */}
-                  {showJournal&&section==="categorized"?<>
-                    <col style={{width:colWidths.amt}}/><col style={{width:colWidths.amt}}/><col style={{width:colWidths.cat}}/><col style={{width:colWidths.transfer}}/><col style={{width:colWidths.del}}/>
-                  </>:<>
-                    <col style={{width:colWidths.amt}}/><col style={{width:colWidths.cat}}/><col style={{width:colWidths.del}}/>
-                  </>}
+                  <col style={{width:colWidths.amt}}/>{/* debit */}
+                  <col style={{width:colWidths.amt}}/>{/* credit */}
+                  <col style={{width:colWidths.cat}}/>{/* category */}
+                  <col style={{width:colWidths.del}}/>{/* action */}
                 </colgroup>
                 <thead><tr>
                   <th style={{width:34,paddingLeft:10,whiteSpace:"nowrap"}}><input type="checkbox" className="cb" checked={allPageSelected} onChange={toggleAll}/></th>
@@ -2744,28 +2743,16 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                   <ResizeTh width={undefined} onResize={w=>setCW("desc",w)} style={{width:"auto",minWidth:150}}>
                     <span className="sort-th" onClick={()=>cycleSort("desc")}>Description<span className={`sort-arrow${sortKey==="desc"?" active":""}`}>{sortKey==="desc"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
                   </ResizeTh>
-                  {showJournal&&section==="categorized"
-                    ? <><ResizeTh width={colWidths.amt} onResize={w=>setCW("amt",w)} style={{textAlign:"right",color:"var(--blue)"}}>
-                        <span className="sort-th" onClick={()=>cycleSort("debit")}>Debit<span className={`sort-arrow${sortKey==="debit"?" active":""}`}>{sortKey==="debit"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
-                      </ResizeTh>
-                      <ResizeTh width={colWidths.amt} onResize={w=>setCW("amt",w)} style={{textAlign:"right",color:"var(--purple)"}}>
-                        <span className="sort-th" onClick={()=>cycleSort("credit")}>Credit<span className={`sort-arrow${sortKey==="credit"?" active":""}`}>{sortKey==="credit"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
-                      </ResizeTh>
-                      <ResizeTh width={colWidths.cat} onResize={w=>setCW("cat",w)}>
-                        <span className="sort-th" onClick={()=>cycleSort("category")}>Category<span className={`sort-arrow${sortKey==="category"?" active":""}`}>{sortKey==="category"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
-                      </ResizeTh>
-                      <ResizeTh width={colWidths.transfer} onResize={w=>setCW("transfer",w)}>
-                        <span className="sort-th" onClick={()=>cycleSort("transfer")}>Transfer<span className={`sort-arrow${sortKey==="transfer"?" active":""}`}>{sortKey==="transfer"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
-                      </ResizeTh>
-                      <th style={{width:colWidths.del}}></th></>
-                    : <><ResizeTh width={colWidths.amt} onResize={w=>setCW("amt",w)}>
-                        <span className="sort-th" onClick={()=>cycleSort("amount")}>Amount<span className={`sort-arrow${sortKey==="amount"?" active":""}`}>{sortKey==="amount"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
-                      </ResizeTh>
-                      <ResizeTh width={colWidths.cat} onResize={w=>setCW("cat",w)}>
-                        <span className="sort-th" onClick={()=>cycleSort("category")}>Category<span className={`sort-arrow${sortKey==="category"?" active":""}`}>{sortKey==="category"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
-                      </ResizeTh>
-                      <th style={{width:colWidths.del}}></th></>
-                  }
+                  <ResizeTh width={colWidths.amt} onResize={w=>setCW("amt",w)} style={{textAlign:"right",color:"var(--blue)"}}>
+                    <span className="sort-th" onClick={()=>cycleSort("debit")}>Debit<span className={`sort-arrow${sortKey==="debit"?" active":""}`}>{sortKey==="debit"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
+                  </ResizeTh>
+                  <ResizeTh width={colWidths.amt} onResize={w=>setCW("amt",w)} style={{textAlign:"right",color:"var(--purple)"}}>
+                    <span className="sort-th" onClick={()=>cycleSort("credit")}>Credit<span className={`sort-arrow${sortKey==="credit"?" active":""}`}>{sortKey==="credit"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
+                  </ResizeTh>
+                  <ResizeTh width={colWidths.cat} onResize={w=>setCW("cat",w)}>
+                    <span className="sort-th" onClick={()=>cycleSort("category")}>Category<span className={`sort-arrow${sortKey==="category"?" active":""}`}>{sortKey==="category"?(sortDir==="asc"?"▲":"▼"):"⇅"}</span></span>
+                  </ResizeTh>
+                  <th style={{width:colWidths.del}}></th>
                 </tr></thead>
                 <tbody>
                   {paged.map((t, rowIdx) => {
@@ -2819,7 +2806,6 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                     ⇄ from {displayAcct.name}
                                   </span>
                                 }
-                                {isMatched && !isCounterpart && <span className="matched-badge" style={{marginLeft:8}}>🔗 matched</span>}
                                 {!isMatched && !isCounterpart && matchCandidate && (
                                   <span className="transfer-badge" style={{marginLeft:8,background:"rgba(96,165,250,.12)",color:"var(--blue)",borderColor:"rgba(96,165,250,.25)"}}>
                                     🔗 transfer from {acctById[matchCandidate.sourceId]?.name || "another account"}
@@ -2829,112 +2815,82 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                           }
                         </td>
 
-                        {showJournal && section==="categorized"
-                          ? <>
-                              <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:"var(--blue)"}}>
-                                {entry && isDebitOnSrc ? fmt(entry.absAmount) : ""}
-                              </td>
-                              <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:"var(--purple)"}}>
-                                {entry && isCreditOnSrc ? fmt(entry.absAmount) : ""}
-                              </td>
-                              <td style={{cursor:(t.isJE||isCounterpart)?"default":"pointer"}} onClick={e=>{e.stopPropagation();if(!t.isJE&&!isCounterpart&&!isEditing)setEditingId(t.id);}}>
-                                {t.isJE
-                                  ? <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                      <span style={{fontSize:10,background:"rgba(167,139,250,.15)",color:"var(--purple)",padding:"1px 5px",borderRadius:4,fontFamily:"DM Mono,monospace"}}>JE</span>
-                                      <span style={{fontSize:12,color:"var(--text3)"}}>Journal Entry</span>
+                        {/* ── Debit column: positive amounts ── */}
+                        {(()=>{
+                          const src = t.sourceId ? acctById[t.sourceId] : null;
+                          const lbl = t.isJE ? "" : src?.type==="Liability" ? "CC Credit" : "Deposit";
+                          return (
+                            <td style={{textAlign:"right",whiteSpace:"nowrap",verticalAlign:"middle"}}>
+                              {t.amount > 0 && (
+                                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:0}}>
+                                  {lbl && <span style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace"}}>{lbl}</span>}
+                                  <span style={{fontFamily:"DM Mono,monospace",fontSize:13,color:"var(--blue)"}}>{fmt(Math.abs(t.amount))}</span>
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })()}
+                        {/* ── Credit column: negative amounts ── */}
+                        {(()=>{
+                          const src = t.sourceId ? acctById[t.sourceId] : null;
+                          const lbl = t.isJE ? "" : src?.type==="Liability" ? "CC Charge" : "Charge";
+                          return (
+                            <td style={{textAlign:"right",whiteSpace:"nowrap",verticalAlign:"middle"}}>
+                              {t.amount < 0 && (
+                                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:0}}>
+                                  {lbl && <span style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace"}}>{lbl}</span>}
+                                  <span style={{fontFamily:"DM Mono,monospace",fontSize:13,color:"var(--purple)"}}>{fmt(Math.abs(t.amount))}</span>
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })()}
+                        {/* ── Category column ── */}
+                        <td style={{cursor:(t.isJE||isCounterpart)?"default":"pointer"}} onClick={e=>{e.stopPropagation();if(!t.isJE&&!isCounterpart&&!isEditing)setEditingId(t.id);}}>
+                          {t.isJE
+                            ? <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                <span style={{fontSize:10,background:"rgba(167,139,250,.15)",color:"var(--purple)",padding:"1px 5px",borderRadius:4,fontFamily:"DM Mono,monospace"}}>JE</span>
+                                <span style={{fontSize:12,color:"var(--text3)"}}>Journal Entry</span>
+                              </div>
+                            : isCounterpart
+                              ? <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                  {displayAcct && <span className={`badge badge-${displayAcct.type.toLowerCase()}`} style={{fontSize:10}}>{displayAcct.type}</span>}
+                                  <span style={{fontSize:12,color:"var(--text2)"}}>{displayAcct?.name || "—"}</span>
+                                </div>
+                              : isEditing
+                                ? <InlineEditor
+                                    txnId={t.id}
+                                    currentValue={t.accountId}
+                                    accounts={accounts}
+                                    onAccept={id=>{ stageClassify(t.id,id); }}
+                                    onCancel={()=>setEditingId(null)}
+                                    onEnterNext={()=>advanceToNext(t.id)}
+                                    hideAcceptButton={true}
+                                  />
+                                : pendingQueue[t.id]
+                                  ? (()=>{ const pa=accounts.find(a=>a.id===pendingQueue[t.id]); return (
+                                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                        {pa&&<span className={`badge badge-${pa.type.toLowerCase()}`} style={{fontSize:10}}>{pa.type}</span>}
+                                        <span style={{fontSize:12,color:"var(--text2)"}}>{pa?.name}</span>
+                                        <span style={{fontSize:10,color:"var(--amber)",marginLeft:2}}>● pending</span>
+                                      </div>); })()
+                                  : <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                      {t.splits && t.splits.length > 1
+                                        ? <><span className="badge" style={{background:"rgba(167,139,250,.15)",color:"var(--purple)",fontSize:10}}>Split</span>
+                                            <span style={{fontSize:12,color:"var(--text2)"}}>{t.splits.length} categories</span>
+                                            {(section==="categorized"||section==="excluded")&&<span style={{fontSize:10,color:"var(--text3)"}}>✎</span>}</>
+                                        : displayAcct
+                                          ? <><span className={`badge badge-${displayAcct.type.toLowerCase()}`} style={{fontSize:10}}>{displayAcct.type}</span>
+                                              <span style={{fontSize:12,color:"var(--text2)"}}>{displayAcct.name}</span>
+                                              {section==="categorized"&&<span style={{fontSize:10,color:"var(--text3)"}}>✎</span>}</>
+                                          : <span style={{fontSize:12,color:"var(--text3)"}}>Click to classify…</span>
+                                      }
+                                      {isMatched && !isCounterpart && (
+                                        <span className="matched-badge" style={{marginLeft:4}}>🔗 matched</span>
+                                      )}
                                     </div>
-                                  : isCounterpart
-                                    ? <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                        {displayAcct && <span className={`badge badge-${displayAcct.type.toLowerCase()}`} style={{fontSize:10}}>{displayAcct.type}</span>}
-                                        <span style={{fontSize:12,color:"var(--text2)"}}>{displayAcct?.name || "—"}</span>
-                                      </div>
-                                  : isEditing
-                                    ? <InlineEditor
-                                        txnId={t.id}
-                                        currentValue={t.accountId}
-                                        accounts={accounts}
-                                        onAccept={id=>{ stageClassify(t.id,id); }}
-                                        onCancel={()=>setEditingId(null)}
-                                        onEnterNext={()=>advanceToNext(t.id)}
-                                        hideAcceptButton={true}
-                                      />
-                                    : pendingQueue[t.id]
-                                      ? (()=>{ const pa=accounts.find(a=>a.id===pendingQueue[t.id]); return (
-                                          <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                            {pa&&<span className={`badge badge-${pa.type.toLowerCase()}`} style={{fontSize:10}}>{pa.type}</span>}
-                                            <span style={{fontSize:12,color:"var(--text2)"}}>{pa?.name}</span>
-                                            <span style={{fontSize:10,color:"var(--amber)",marginLeft:2}}>● pending</span>
-                                          </div>); })()
-                                      : <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                          {displayAcct && <span className={`badge badge-${displayAcct.type.toLowerCase()}`} style={{fontSize:10}}>{displayAcct.type}</span>}
-                                          <span style={{fontSize:12,color:"var(--text2)"}}>{displayAcct?.name || <span style={{color:"var(--text3)"}}>—</span>}</span>
-                                          <span style={{fontSize:10,color:"var(--text3)"}}>✎</span>
-                                        </div>
-                                }
-                              </td>
-                              <td onClick={e=>e.stopPropagation()}>
-                                {isMatched && <span className="matched-badge">🔗 matched</span>}
-                              </td>
-                            </>
-                          : <>
-                              <td style={{whiteSpace:"nowrap"}}>
-                                {(()=>{
-                                  const src = t.sourceId ? acctById[t.sourceId] : null;
-                                  const lbl = src?.type==="Liability"
-                                    ? (t.amount>0?"CC Credit":"CC Charge")
-                                    : (t.amount>0?"Deposit":"Charge");
-                                  return (
-                                    <div style={{display:"flex",flexDirection:"column",gap:1}}>
-                                      <span style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",letterSpacing:"0.5px"}}>{lbl}</span>
-                                      <span className={`amount ${t.amount>=0?"pos":"neg"}`}>{fmt(t.amount)}</span>
-                                    </div>
-                                  );
-                                })()}
-                              </td>
-                              <td style={{cursor:(t.isJE||isCounterpart)?"default":"pointer"}} onClick={e=>{e.stopPropagation();if(!t.isJE&&!isCounterpart&&!isEditing)setEditingId(t.id);}}>
-                                {t.isJE
-                                  ? <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                      <span style={{fontSize:10,background:"rgba(167,139,250,.15)",color:"var(--purple)",padding:"1px 5px",borderRadius:4,fontFamily:"DM Mono,monospace"}}>JE</span>
-                                      <span style={{fontSize:12,color:"var(--text3)"}}>Journal Entry</span>
-                                    </div>
-                                  : isCounterpart
-                                    ? <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                        {displayAcct && <span className={`badge badge-${displayAcct.type.toLowerCase()}`} style={{fontSize:10}}>{displayAcct.type}</span>}
-                                        <span style={{fontSize:12,color:"var(--text2)"}}>{displayAcct?.name || "—"}</span>
-                                      </div>
-                                  : isEditing
-                                    ? <InlineEditor
-                                        txnId={t.id}
-                                        currentValue={t.accountId}
-                                        accounts={accounts}
-                                        onAccept={id=>{ stageClassify(t.id,id); }}
-                                        onCancel={()=>setEditingId(null)}
-                                        onEnterNext={()=>advanceToNext(t.id)}
-                                        hideAcceptButton={true}
-                                      />
-                                    : pendingQueue[t.id]
-                                      ? (()=>{ const pa=accounts.find(a=>a.id===pendingQueue[t.id]); return (
-                                          <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                            {pa&&<span className={`badge badge-${pa.type.toLowerCase()}`} style={{fontSize:10}}>{pa.type}</span>}
-                                            <span style={{fontSize:12,color:"var(--text2)"}}>{pa?.name}</span>
-                                            <span style={{fontSize:10,color:"var(--amber)",marginLeft:2}}>● pending</span>
-                                          </div>); })()
-                                      : <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                          {t.splits && t.splits.length > 1
-                                            ? <><span className="badge" style={{background:"rgba(167,139,250,.15)",color:"var(--purple)",fontSize:10}}>Split</span>
-                                                <span style={{fontSize:12,color:"var(--text2)"}}>{t.splits.length} categories</span>
-                                                <span style={{fontSize:10,color:"var(--text3)"}}>✎</span></>
-                                            : displayAcct
-                                              ? <><span className={`badge badge-${displayAcct.type.toLowerCase()}`} style={{fontSize:10}}>{displayAcct.type}</span>
-                                                  <span style={{fontSize:12,color:"var(--text2)"}}>{displayAcct.name}</span>
-                                                  <span style={{fontSize:10,color:"var(--text3)"}}>✎</span></>
-                                              : <span style={{fontSize:12,color:"var(--text3)"}}>Click to classify…</span>
-                                          }
-                                        </div>
-                                }
-                              </td>
-                            </>
-                        }
+                          }
+                        </td>
                         <td style={{paddingLeft:4,whiteSpace:"nowrap",width:72,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
                           {/* Reconcile toggle — Categorized only */}
                           {!t.isJE && !isCounterpart && section==="categorized" && onManualReconcile && sourceAccount && (
@@ -4100,6 +4056,7 @@ export default function FinanceApp() {
   const [reportThemeMode,       setReportThemeMode]       = useState("light"); // "light" | "dark"
   const [splitTxn,        setSplitTxn]        = useState(null);
   const [cardTxn,         setCardTxn]         = useState(null);
+  const [searchJE,        setSearchJE]        = useState(null);
   const [globalSearch,    setGlobalSearch]    = useState("");
   const [showSearch,      setShowSearch]      = useState(false);
   const [showReportThemeEditor, setShowReportThemeEditor] = useState(false);
@@ -5195,8 +5152,7 @@ export default function FinanceApp() {
               </div>
               {showSearch && globalSearch && (()=>{
                 const q = globalSearch.toLowerCase();
-                const results = transactions.filter(t=>{
-                  // Only show categorized (posted) transactions — not excluded or uncategorized
+                const txnResults = transactions.filter(t=>{
                   if (!t.accountId || t.excluded || excludedTxns.has(t.id)) return false;
                   const descMatch = (t.description||"").toLowerCase().includes(q);
                   const abs = Math.abs(t.amount||0);
@@ -5204,31 +5160,31 @@ export default function FinanceApp() {
                     abs.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,",").includes(q) ||
                     fmt(t.amount).includes(q);
                   return descMatch || amtMatch;
-                })
-                .sort((a,b)=>(b.date||"").localeCompare(a.date||""))
-                .slice(0,25);
+                }).sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,20);
+                const jeResults = (manualJEs||[]).filter(je=>{
+                  const descMatch = (je.memo||"").toLowerCase().includes(q);
+                  const total = je.lines ? je.lines.reduce((s,l)=>s+(parseFloat(l.debit)||0),0) : 0;
+                  const amtMatch = total.toFixed(2).includes(q) ||
+                    total.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,",").includes(q);
+                  return descMatch || amtMatch;
+                }).sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,5);
+                const totalCount = txnResults.length + jeResults.length;
                 const acctById2 = Object.fromEntries(accounts.map(a=>[a.id,a]));
                 return (
                   <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,background:"var(--surface)",border:"1px solid var(--border)",borderRadius:8,boxShadow:"0 8px 32px rgba(0,0,0,.25)",zIndex:200,maxHeight:360,overflowY:"auto"}}>
-                    {results.length===0
-                      ? <div style={{padding:"16px 18px",color:"var(--text3)",fontSize:13}}>No transactions match "{globalSearch}"</div>
+                    {totalCount===0
+                      ? <div style={{padding:"16px 18px",color:"var(--text3)",fontSize:13}}>No results match "{globalSearch}"</div>
                       : <>
                           <div style={{padding:"8px 14px 4px",fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase",letterSpacing:"1px",borderBottom:"1px solid var(--border)"}}>
-                            {results.length} result{results.length!==1?"s":""}
+                            {totalCount} result{totalCount!==1?"s":""}
                           </div>
-                          {results.map(t=>{
+                          {txnResults.map(t=>{
                             const acct = t.accountId ? acctById2[t.accountId] : null;
                             return (
                               <div key={t.id} style={{padding:"9px 16px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}
                                 onMouseDown={e=>{
-                                  // Use mouseDown so the card state is set before the search input
-                                  // can fire blur/focus events or the click event can reach the
-                                  // TxnCard overlay. e.preventDefault() stops default focus-switch.
-                                  // The overlay's 150ms guard handles the click that follows.
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setShowSearch(false);
-                                  setGlobalSearch("");
+                                  e.preventDefault(); e.stopPropagation();
+                                  setShowSearch(false); setGlobalSearch("");
                                   setCardTxn(t);
                                 }}>
                                 <div style={{flex:1,minWidth:0}}>
@@ -5238,6 +5194,28 @@ export default function FinanceApp() {
                                 <div style={{textAlign:"right",flexShrink:0}}>
                                   <div style={{fontSize:13,fontFamily:"DM Mono,monospace",color:t.amount>=0?"var(--green)":"var(--red)"}}>{fmt(t.amount)}</div>
                                   {acct && <div style={{fontSize:10,color:"var(--text3)",marginTop:1}}>{acct.name}</div>}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {jeResults.map(je=>{
+                            const total = je.lines ? je.lines.reduce((s,l)=>s+(parseFloat(l.debit)||0),0) : 0;
+                            return (
+                              <div key={je.id} style={{padding:"9px 16px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:12,cursor:"pointer",background:"rgba(167,139,250,.04)"}}
+                                onMouseDown={e=>{
+                                  e.preventDefault(); e.stopPropagation();
+                                  setShowSearch(false); setGlobalSearch("");
+                                  setSearchJE(je);
+                                }}>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                    <span style={{fontSize:10,background:"rgba(167,139,250,.15)",color:"var(--purple)",padding:"1px 5px",borderRadius:4,fontFamily:"DM Mono,monospace",flexShrink:0}}>JE</span>
+                                    <span style={{fontSize:13,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{je.memo||"Journal Entry"}</span>
+                                  </div>
+                                  <div style={{fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginTop:1}}>{je.date}</div>
+                                </div>
+                                <div style={{textAlign:"right",flexShrink:0}}>
+                                  <div style={{fontSize:13,fontFamily:"DM Mono,monospace",color:"var(--blue)"}}>{fmt(total)}</div>
                                 </div>
                               </div>
                             );
@@ -5901,6 +5879,12 @@ export default function FinanceApp() {
             setManualJEs(prev=>{ const ex=prev.find(e=>e.id===jeOrAction.id); return ex?prev.map(e=>e.id===jeOrAction.id?jeOrAction:e):[...prev,jeOrAction]; });
           }
         }}/>}
+      {searchJE && <JEEditModal
+        je={searchJE}
+        accounts={activeAccounts}
+        onSave={je=>{ setManualJEs(prev=>{ const ex=prev.find(e=>e.id===je.id); return ex?prev.map(e=>e.id===je.id?je:e):[...prev,je]; }); setTimeout(save,100); setSearchJE(null); }}
+        onDelete={id=>{ setManualJEs(prev=>prev.filter(e=>e.id!==id)); setTimeout(save,100); setSearchJE(null); }}
+        onClose={()=>setSearchJE(null)}/>}
       {/* TxnCard renders AFTER DrillModal so it stacks on top at the same z-index */}
       {cardTxn && <TxnCard
         transaction={cardTxn}
