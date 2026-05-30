@@ -675,12 +675,56 @@ const styles = `
     .accept-btn       { padding:3px 7px; font-size:11px; }
     .cancel-btn       { padding:3px 6px; font-size:11px; }
 
-    /* P&L / Balance report: scroll when many period columns */
-    .qb-report        { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    /* ── Prevent iOS auto-zoom on any focused input / select ── */
+    input[type="text"],input[type="number"],input[type="date"],select,.combo-input { font-size:16px !important; }
+
+    /* P&L / Balance / Cash Flow reports: fill screen, strip min-width */
+    .qb-report {
+      min-width:0 !important; width:100% !important;
+      overflow-x:auto; -webkit-overflow-scrolling:touch;
+    }
+    .qb-row    { padding:3px 12px !important; }
+    .qb-row.l1 { padding-left:24px !important; }
+    .qb-row.l2 { padding-left:36px !important; }
+    .qb-row.l3 { padding-left:48px !important; }
+    .qb-section{ padding:8px 12px 2px !important; }
+    .qb-subtotal,.qb-grand { padding:4px 12px !important; }
+    .qb-label  { font-size:11px !important; }
+    .qb-val    { font-size:11px !important; min-width:72px !important; width:72px !important; max-width:72px !important; }
+    .qb-subtotal-val,.qb-grand-val { font-size:11px !important; min-width:72px !important; width:72px !important; max-width:72px !important; }
+    .qb-col-head { min-width:72px !important; font-size:11px !important; }
+    .qb-header { padding:10px 12px !important; }
+    .qb-co     { font-size:10px !important; }
+    .qb-title  { font-size:14px !important; }
     .report-toolbar   { flex-wrap:wrap; gap:6px; }
 
-    /* DrillModal: scrollable table with sticky header row */
-    .drill-modal .drill-body { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    /* DrillModal: card layout */
+    .drill-modal { border-radius:18px 18px 0 0 !important; }
+    .drill-modal .drill-body table { min-width:0 !important; }
+    .drill-modal .drill-body table thead { display:none; }
+    .drill-modal .drill-body table, .drill-modal .drill-body table tbody { display:block; }
+    .drill-modal .drill-body table tbody tr {
+      display:grid; grid-template-columns:1fr auto;
+      grid-template-rows:auto auto auto;
+      border:1px solid var(--border); border-radius:8px;
+      margin:6px 10px; padding:10px 12px;
+      background:var(--surface);
+    }
+    .drill-modal .drill-body table tbody tr td { border:none !important; padding:1px 0 !important; }
+    /* date */
+    .drill-modal .drill-body table tbody tr td:nth-child(1){ grid-column:1; grid-row:1; font-size:11px; color:var(--text3); font-family:'DM Mono',monospace; }
+    /* description */
+    .drill-modal .drill-body table tbody tr td:nth-child(2){ grid-column:1/-1; grid-row:2; font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* counterpart */
+    .drill-modal .drill-body table tbody tr td:nth-child(3){ grid-column:1; grid-row:3; font-size:11px; color:var(--text2); }
+    /* debit */
+    .drill-modal .drill-body table tbody tr td:nth-child(4){ grid-column:2; grid-row:1; text-align:right; font-size:12px; color:var(--blue); font-family:'DM Mono',monospace; }
+    /* credit */
+    .drill-modal .drill-body table tbody tr td:nth-child(5){ grid-column:2; grid-row:3; text-align:right; font-size:12px; color:var(--purple); font-family:'DM Mono',monospace; }
+    /* balance */
+    .drill-modal .drill-body table tbody tr td:nth-child(6){ display:none; }
+    /* actions */
+    .drill-modal .drill-body table tbody tr td:nth-child(7){ grid-column:2; grid-row:2; text-align:right; }
 
     /* JE page: scrollable line table */
     .je-table         { min-width:300px; }
@@ -2702,10 +2746,15 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
               <div style={{textAlign:"center"}}>
                 {(()=>{const src=mobItem.sourceId?acctById[mobItem.sourceId]:null;const isLiab=src?.type==="Liability";const lbl=isLiab?(mobItem.amount>0?"CC Credit":"CC Charge"):(mobItem.amount>0?"Deposit":"Charge");return(<><div style={{fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase",marginBottom:4}}>{lbl}</div><div style={{fontFamily:"DM Serif Display,serif",fontSize:40,color:mobItem.amount>0?"var(--blue)":"var(--purple)"}}>{fmt(Math.abs(mobItem.amount))}</div></>);})()}
               </div>
-              {/* Description */}
-              <div style={{background:"var(--surface2)",borderRadius:"var(--radius-lg)",padding:"14px 16px"}}>
-                <div style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginBottom:4}}>DESCRIPTION</div>
-                <div style={{fontSize:15,color:"var(--text)",fontWeight:500,lineHeight:1.4}}>{mobItem.description}</div>
+              {/* Description — editable */}
+              <div style={{background:"var(--surface2)",borderRadius:"var(--radius-lg)",padding:"12px 14px"}}>
+                <div style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginBottom:6}}>DESCRIPTION</div>
+                <input
+                  type="text"
+                  defaultValue={mobItem.description}
+                  onBlur={e=>{if(onUpdate&&e.target.value!==mobItem.description)onUpdate(mobItem.id,{description:e.target.value});}}
+                  style={{width:"100%",fontSize:15,fontWeight:500,background:"transparent",border:"none",outline:"none",color:"var(--text)",padding:0,fontFamily:"DM Sans,sans-serif"}}
+                />
               </div>
               {/* Date + Source */}
               <div style={{display:"flex",gap:10}}>
@@ -2720,9 +2769,54 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                   </div>
                 )}
               </div>
-              {/* Category picker */}
+              {/* Quick classification suggestions */}
+              {(()=>{
+                const sugg = new Set();
+                // 1. Rules that match this description
+                for (const r of (rules||[])) {
+                  const p=r.pattern.toLowerCase(), d=(mobItem.description||"").toLowerCase();
+                  if((r.matchType==="contains"&&d.includes(p))||(r.matchType==="startsWith"&&d.startsWith(p))||(r.matchType==="exact"&&d===p))
+                    sugg.add(r.accountId);
+                }
+                // 2. Past transactions with similar descriptions (first 15 chars)
+                const prefix=(mobItem.description||"").toLowerCase().slice(0,15);
+                for(const t of (allTransactions||[])){
+                  if(t.accountId&&t.accountId!=="__je__"&&t.id!==mobItem.id&&(t.description||"").toLowerCase().includes(prefix))
+                    sugg.add(t.accountId);
+                  if(sugg.size>=4)break;
+                }
+                // 3. Most-used accounts as fallback
+                const freq={};
+                for(const t of (allTransactions||[])){if(t.accountId&&t.accountId!=="__je__")freq[t.accountId]=(freq[t.accountId]||0)+1;}
+                Object.entries(freq).sort((a,b)=>b[1]-a[1]).forEach(([id])=>{if(sugg.size<6)sugg.add(id);});
+                const suggArr=[...sugg].slice(0,6).filter(id=>acctById[id]);
+                if(!suggArr.length) return null;
+                return (
+                  <div>
+                    <div style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginBottom:8}}>QUICK CLASSIFY</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:7}}>
+                      {suggArr.map(id=>{
+                        const a=acctById[id];
+                        return(
+                          <button key={id}
+                            style={{padding:"8px 12px",borderRadius:8,border:`1px solid ${mobClassifyAcct===id?"var(--accent)":"var(--border)"}`,
+                              background:mobClassifyAcct===id?"rgba(200,241,53,.12)":"var(--surface2)",
+                              color:mobClassifyAcct===id?"var(--accent)":"var(--text2)",
+                              fontSize:12,cursor:"pointer",fontFamily:"DM Sans,sans-serif",fontWeight:500,
+                              display:"flex",flexDirection:"column",alignItems:"flex-start",gap:1}}
+                            onClick={()=>setMobClassifyAcct(mobClassifyAcct===id?null:id)}>
+                            <span style={{fontSize:9,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase"}}>{a.type}</span>
+                            <span>{a.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+              {/* Category picker (full search) */}
               <div>
-                <div style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginBottom:8}}>CLASSIFY AS</div>
+                <div style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginBottom:8}}>OR SEARCH ALL</div>
                 <AccountCombo value={mobClassifyAcct} accounts={accounts} onChange={id=>setMobClassifyAcct(id||null)}/>
               </div>
             </div>
@@ -5281,16 +5375,7 @@ export default function FinanceApp() {
               {appThemeMode==="dark"?"☾":"☀"}
             </button>
           </div>
-          {/* Account chips strip for Transactions page */}
-          {page==="classify" && tabList.length>0 && (
-            <div className="mobile-acct-strip">
-              {tabList.map(s=>(
-                <div key={s.id} className={`mobile-acct-chip${activeSrcId===s.id?" active":""}`} onClick={()=>setActiveSrcId(s.id)}>
-                  {s.name}
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Account chips strip removed — account cards in the page body serve as the selector */}
         </header>
 
         {/* SIDEBAR */}
@@ -5588,8 +5673,9 @@ export default function FinanceApp() {
             {/* ── TRANSACTIONS ── */}
             {page==="classify" && (
               <>
-                <div className="mob-hide-on-mobile" style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:4}}>
-                  <div>
+                {/* Title + desktop-only import buttons */}
+                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:4}}>
+                  <div className="mob-hide-on-mobile">
                     <div className="page-title">
                       {(()=>{ const s=tabList.find(t=>t.id===activeSrcId); return s?s.name:"Transactions"; })()}
                     </div>
@@ -5597,8 +5683,8 @@ export default function FinanceApp() {
                   </div>
                   <div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap"}}>
                     <button className="btn btn-ghost btn-sm" onClick={()=>setShowRulesPanel(true)}>⚡ Rules</button>
-                    <button className="btn btn-ghost btn-sm" onClick={()=>setShowPreCatModal(true)}>+ Import Pre-Cat</button>
-                    <button className="btn btn-ghost btn-sm" onClick={()=>setShowImportModal(true)}>+ Import CSV</button>
+                    <button className="btn btn-ghost btn-sm mob-hide-on-mobile" onClick={()=>setShowPreCatModal(true)}>+ Import Pre-Cat</button>
+                    <button className="btn btn-ghost btn-sm mob-hide-on-mobile" onClick={()=>setShowImportModal(true)}>+ Import CSV</button>
                     {plaidAccounts.length > 0 && (
                       <button className="btn btn-ghost btn-sm" onClick={syncAllPlaid} disabled={plaidSyncing}
                         style={{color:"var(--green)"}}>
