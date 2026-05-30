@@ -674,6 +674,37 @@ const styles = `
     /* Inline editor in table: tighter */
     .accept-btn       { padding:3px 7px; font-size:11px; }
     .cancel-btn       { padding:3px 6px; font-size:11px; }
+
+    /* P&L / Balance report: scroll when many period columns */
+    .qb-report        { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .report-toolbar   { flex-wrap:wrap; gap:6px; }
+
+    /* DrillModal: scrollable table with sticky header row */
+    .drill-modal .drill-body { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+
+    /* JE page: scrollable line table */
+    .je-table         { min-width:300px; }
+
+    /* Mobile classify button */
+    .mob-classify-trigger { padding:20px 0 8px; display:flex; flex-direction:column; gap:10px; }
+    .mob-classify-btn {
+      width:100%; padding:16px 20px; border-radius:var(--radius-lg);
+      background:var(--accent); color:#0f0f11; font-size:15px; font-weight:700;
+      border:none; cursor:pointer; display:flex; justify-content:space-between; align-items:center;
+    }
+
+    /* Mobile transaction card list (categorized/excluded) */
+    .mob-txn-list     { display:flex; flex-direction:column; gap:8px; }
+    .mob-txn-card     {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius-lg); padding:10px 14px;
+    }
+    .mob-txn-top      { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:5px; }
+    .mob-txn-desc     { flex:1; font-size:13px; color:var(--text); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .mob-txn-amt      { flex-shrink:0; text-align:right; }
+    .mob-txn-bottom   { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .mob-txn-meta     { display:flex; align-items:center; gap:6px; flex:1; min-width:0; }
+    .mob-txn-actions  { display:flex; align-items:center; gap:4px; flex-shrink:0; }
   }
 
   @media (max-width:768px){ .mob-hide-on-mobile{ display:none !important; } }
@@ -715,11 +746,11 @@ const CF_SECTIONS   = ["Operating","Investing","Financing"];
 const PAGE_SIZE     = 25;
 
 const MOBILE_NAV = [
-  { id:"import",   icon:"⬆", label:"Import"  },
   { id:"classify", icon:"⊞", label:"Txns"    },
   { id:"je",       icon:"✎", label:"Journal" },
   { id:"pnl",      icon:"↑", label:"P&L"     },
   { id:"balance",  icon:"⊖", label:"Balance" },
+  { id:"cashflow", icon:"⇄", label:"Cash"    },
 ];
 
 const DEFAULT_ACCOUNTS = [
@@ -2433,6 +2464,15 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
   const [sortKey,       setSortKey]       = useState("date");
   const [sortDir,       setSortDir]       = useState("desc");
   const setCW = (k,w) => setColWidths(p=>({...p,[k]:w}));
+  const [isMobile,       setIsMobile]       = useState(()=>typeof window!=="undefined"&&window.innerWidth<=600);
+  const [mobClassifyMode,setMobClassifyMode]= useState(false);
+  const [mobClassifyIdx, setMobClassifyIdx] = useState(0);
+  const [mobClassifyAcct,setMobClassifyAcct]= useState(null);
+  useEffect(()=>{
+    const h=()=>setIsMobile(window.innerWidth<=600);
+    window.addEventListener("resize",h);
+    return ()=>window.removeEventListener("resize",h);
+  },[]);
 
   const cycleSort = (key) => {
     if (sortKey===key) setSortDir(d=>d==="asc"?"desc":"asc");
@@ -2616,6 +2656,158 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
   },[uncategorized, allTransactions, sourceAccount]);
 
   const matchBannerCount = Object.keys(matchCandidates).length;
+
+  // ── Mobile: uncategorized one-by-one classify flow ──────────────────────
+  if (isMobile && section==="uncategorized") {
+    const mobItem = uncategorized[mobClassifyIdx] || null;
+    return (
+      <div>
+        <div className="tabs">
+          <div className={`tab${section==="uncategorized"?" active":""}`} onClick={()=>{setSection("uncategorized");setCurrentPage(1);}}>
+            Uncategorized{uncategorized.length>0&&<span className="tab-badge">{uncategorized.length}</span>}
+          </div>
+          <div className={`tab${section==="categorized"?" active":""}`} onClick={()=>{setSection("categorized");setCurrentPage(1);}}>
+            Categorized<span className="tab-badge" style={{background:"rgba(74,222,128,.15)",color:"var(--green)"}}>{categorized.length}</span>
+          </div>
+          <div className={`tab${section==="excluded"?" active":""}`} onClick={()=>{setSection("excluded");setCurrentPage(1);}}>
+            Excluded{excluded.length>0&&<span className="tab-badge" style={{background:"rgba(255,82,82,.15)",color:"var(--red)"}}>{excluded.length}</span>}
+          </div>
+        </div>
+        {uncategorized.length===0
+          ? <div className="empty"><div className="empty-icon">✓</div><div className="empty-title">All transactions are categorized!</div></div>
+          : <div className="mob-classify-trigger">
+              <button className="mob-classify-btn" onClick={()=>{setMobClassifyMode(true);setMobClassifyIdx(0);setMobClassifyAcct(null);}}>
+                <span>Classify {uncategorized.length} transaction{uncategorized.length!==1?"s":""}</span>
+                <span>→</span>
+              </button>
+              <div style={{fontSize:12,color:"var(--text3)",textAlign:"center",fontFamily:"DM Mono,monospace"}}>Tap to review one by one</div>
+            </div>
+        }
+        {/* One-by-one classify overlay */}
+        {mobClassifyMode && mobItem && (
+          <div style={{position:"fixed",inset:0,zIndex:400,background:"var(--bg)",display:"flex",flexDirection:"column",paddingBottom:"env(safe-area-inset-bottom)"}}>
+            {/* Header */}
+            <div style={{padding:"14px 18px",borderBottom:"1px solid var(--border)",background:"var(--surface)",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setMobClassifyMode(false)}>← Back</button>
+              <span style={{fontSize:12,color:"var(--text3)",fontFamily:"DM Mono,monospace"}}>{mobClassifyIdx+1} of {uncategorized.length}</span>
+              <div style={{width:60}}/>
+            </div>
+            {/* Progress bar */}
+            <div style={{height:3,background:"var(--border)"}}>
+              <div style={{height:"100%",background:"var(--accent)",width:`${((mobClassifyIdx+1)/uncategorized.length)*100}%`,transition:"width .2s"}}/>
+            </div>
+            {/* Body */}
+            <div style={{flex:1,overflowY:"auto",padding:"24px 18px",display:"flex",flexDirection:"column",gap:14}}>
+              {/* Amount */}
+              <div style={{textAlign:"center"}}>
+                {(()=>{const src=mobItem.sourceId?acctById[mobItem.sourceId]:null;const isLiab=src?.type==="Liability";const lbl=isLiab?(mobItem.amount>0?"CC Credit":"CC Charge"):(mobItem.amount>0?"Deposit":"Charge");return(<><div style={{fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace",textTransform:"uppercase",marginBottom:4}}>{lbl}</div><div style={{fontFamily:"DM Serif Display,serif",fontSize:40,color:mobItem.amount>0?"var(--blue)":"var(--purple)"}}>{fmt(Math.abs(mobItem.amount))}</div></>);})()}
+              </div>
+              {/* Description */}
+              <div style={{background:"var(--surface2)",borderRadius:"var(--radius-lg)",padding:"14px 16px"}}>
+                <div style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginBottom:4}}>DESCRIPTION</div>
+                <div style={{fontSize:15,color:"var(--text)",fontWeight:500,lineHeight:1.4}}>{mobItem.description}</div>
+              </div>
+              {/* Date + Source */}
+              <div style={{display:"flex",gap:10}}>
+                <div style={{flex:1,background:"var(--surface2)",borderRadius:"var(--radius-lg)",padding:"10px 14px"}}>
+                  <div style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginBottom:2}}>DATE</div>
+                  <div style={{fontSize:13,fontFamily:"DM Mono,monospace",color:"var(--text)"}}>{mobItem.date}</div>
+                </div>
+                {acctById[mobItem.sourceId] && (
+                  <div style={{flex:1,background:"var(--surface2)",borderRadius:"var(--radius-lg)",padding:"10px 14px"}}>
+                    <div style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginBottom:2}}>ACCOUNT</div>
+                    <div style={{fontSize:13,color:"var(--text2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{acctById[mobItem.sourceId].name}</div>
+                  </div>
+                )}
+              </div>
+              {/* Category picker */}
+              <div>
+                <div style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",marginBottom:8}}>CLASSIFY AS</div>
+                <AccountCombo value={mobClassifyAcct} accounts={accounts} onChange={id=>setMobClassifyAcct(id||null)}/>
+              </div>
+            </div>
+            {/* Footer */}
+            <div style={{padding:"14px 18px",borderTop:"1px solid var(--border)",background:"var(--surface2)",display:"flex",gap:10,flexShrink:0}}>
+              <button className="btn btn-ghost" style={{flex:1}} onClick={()=>{setMobClassifyAcct(null);if(mobClassifyIdx<uncategorized.length-1)setMobClassifyIdx(i=>i+1);else setMobClassifyMode(false);}}>Skip</button>
+              <button className="btn btn-primary" style={{flex:2}} disabled={!mobClassifyAcct} onClick={()=>{onClassify(mobItem.id,mobClassifyAcct);setMobClassifyAcct(null);if(mobClassifyIdx<uncategorized.length-1)setMobClassifyIdx(i=>i+1);else setMobClassifyMode(false);}}>Classify →</button>
+            </div>
+          </div>
+        )}
+        {editingJE&&<JEEditModal je={editingJE} accounts={accounts} onSave={je=>{if(onEditJE)onEditJE(je);setEditingJE(null);}} onDelete={id=>{if(onEditJE)onEditJE({_delete:true,id});setEditingJE(null);}} onClose={()=>setEditingJE(null)}/>}
+      </div>
+    );
+  }
+
+  // ── Mobile: categorized / excluded as swipeable cards ───────────────────
+  if (isMobile) {
+    return (
+      <div>
+        <div className="tabs">
+          <div className={`tab${section==="uncategorized"?" active":""}`} onClick={()=>{setSection("uncategorized");setCurrentPage(1);}}>
+            Uncategorized{uncategorized.length>0&&<span className="tab-badge">{uncategorized.length}</span>}
+          </div>
+          <div className={`tab${section==="categorized"?" active":""}`} onClick={()=>{setSection("categorized");setCurrentPage(1);}}>
+            Categorized<span className="tab-badge" style={{background:"rgba(74,222,128,.15)",color:"var(--green)"}}>{categorized.length}</span>
+          </div>
+          <div className={`tab${section==="excluded"?" active":""}`} onClick={()=>{setSection("excluded");setCurrentPage(1);}}>
+            Excluded{excluded.length>0&&<span className="tab-badge" style={{background:"rgba(255,82,82,.15)",color:"var(--red)"}}>{excluded.length}</span>}
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+          <input type="text" placeholder="Search…" value={search} onChange={e=>{setSearch(e.target.value);setCurrentPage(1);}} style={{flex:1,fontSize:13,padding:"6px 11px",background:"var(--surface2)",border:"1px solid var(--border)",borderRadius:"var(--radius)",color:"var(--text)",outline:"none"}}/>
+        </div>
+        {pool.length===0
+          ? <div className="empty"><div className="empty-icon">{section==="excluded"?"Excluded":"None"}</div><div className="empty-title">{section==="excluded"?"No excluded transactions.":"No categorized transactions yet."}</div></div>
+          : <div className="mob-txn-list">
+              {paged.map(t=>{
+                const src=t.sourceId?acctById[t.sourceId]:null;
+                const cat=t.accountId&&t.accountId!=="__je__"?acctById[t.accountId]:null;
+                const isLiab=src?.type==="Liability";
+                const lbl=t.isJE?"JE":isLiab?(t.amount>0?"CC Credit":"CC Charge"):(t.amount>0?"Deposit":"Charge");
+                const _aid=sourceAccount?.id||t.sourceId;
+                const showR=t.isJE?t.reconciled:((t.reconciledAccts||[]).includes(_aid)||(manualRecons[_aid]||[]).includes(t.id));
+                const isCounterpart=sourceAccount&&t.accountId===sourceAccount.id&&t.sourceId!==sourceAccount.id;
+                return (
+                  <div key={t.id} className="mob-txn-card">
+                    <div className="mob-txn-top">
+                      <div className="mob-txn-desc">{t.description}{isCounterpart&&src&&<span className="transfer-badge" style={{marginLeft:6,fontSize:10}}>⇄ {src.name}</span>}</div>
+                      <div className="mob-txn-amt">
+                        <div style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",textAlign:"right"}}>{lbl}</div>
+                        <div style={{fontSize:13,fontFamily:"DM Mono,monospace",color:t.amount>0?"var(--blue)":"var(--purple)"}}>{fmt(Math.abs(t.amount))}</div>
+                      </div>
+                    </div>
+                    <div className="mob-txn-bottom">
+                      <div className="mob-txn-meta">
+                        <span style={{fontSize:11,color:"var(--text3)",fontFamily:"DM Mono,monospace"}}>{t.date}</span>
+                        {cat&&<><span className={`badge badge-${cat.type.toLowerCase()}`} style={{fontSize:9}}>{cat.type}</span><span style={{fontSize:11,color:"var(--text2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:120}}>{cat.name}</span></>}
+                        {t.isJE&&<span style={{fontSize:10,color:"var(--purple)",fontFamily:"DM Mono,monospace"}}>JE</span>}
+                        {t.transferMatchId&&!isCounterpart&&<span className="matched-badge" style={{fontSize:10}}>🔗</span>}
+                      </div>
+                      <div className="mob-txn-actions">
+                        {section==="categorized"&&onManualReconcile&&sourceAccount&&!t.isJE&&!isCounterpart&&(
+                          <span title={showR?"Unreconcile":"Reconcile"} onClick={e=>{e.stopPropagation();onManualReconcile(t,_aid);}} style={{fontSize:13,fontWeight:800,color:showR?"var(--green)":"var(--border2)",cursor:"pointer",padding:"2px 5px"}}>R</span>
+                        )}
+                        {t.isJE
+                          ?<button className="drill-je-btn" onClick={()=>{const je=(manualJEs||[]).find(e=>e.id===t.jeId);if(je)setEditingJE(je);}}>✎ JE</button>
+                          :!isCounterpart&&(()=>{const m=[];if(onOpenCard&&section==="categorized")m.push({label:"Open",action:()=>onOpenCard(t)});m.push("---");if(section==="excluded")m.push({label:"Restore",action:()=>onDelete&&onDelete(t.id)});else m.push({label:"Uncategorize",action:()=>onDelete&&onDelete(t.id)});if(onHardDelete){m.push("---");m.push({label:"Delete",danger:true,action:()=>{if(window.confirm("Permanently delete? Cannot be undone."))onHardDelete(t.id);}});}return<RowActionsMenu items={m}/>;})()
+                        }
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="pagination" style={{marginTop:8}}>
+                <span className="page-info">{filtered.length} transactions</span>
+                <button className="btn btn-ghost btn-sm" disabled={pg===1} onClick={()=>setCurrentPage(p=>p-1)}>←</button>
+                <span className="page-info">{pg}/{totalPages}</span>
+                <button className="btn btn-ghost btn-sm" disabled={pg>=totalPages} onClick={()=>setCurrentPage(p=>p+1)}>→</button>
+              </div>
+            </div>
+        }
+        {editingJE&&<JEEditModal je={editingJE} accounts={accounts} onSave={je=>{if(onEditJE)onEditJE(je);setEditingJE(null);}} onDelete={id=>{if(onEditJE)onEditJE({_delete:true,id});setEditingJE(null);}} onClose={()=>setEditingJE(null)}/>}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -5396,7 +5588,7 @@ export default function FinanceApp() {
             {/* ── TRANSACTIONS ── */}
             {page==="classify" && (
               <>
-                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:4}}>
+                <div className="mob-hide-on-mobile" style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:4}}>
                   <div>
                     <div className="page-title">
                       {(()=>{ const s=tabList.find(t=>t.id===activeSrcId); return s?s.name:"Transactions"; })()}
@@ -5723,6 +5915,10 @@ export default function FinanceApp() {
                     <option value="month">Month</option>
                     <option value="year">Year</option>
                   </select>
+                  <button className="btn btn-ghost btn-sm" style={{fontSize:11}} title="Toggle report theme"
+                    onClick={()=>setReportThemeMode(m=>m==="light"?"dark":"light")}>
+                    {reportThemeMode==="light"?"☾ Dark":"☀ Light"}
+                  </button>
                 </div>
 
                 {trendMode==="standard" ? (
@@ -5800,6 +5996,10 @@ export default function FinanceApp() {
                     <option value="month">Month</option>
                     <option value="year">Year</option>
                   </select>
+                  <button className="btn btn-ghost btn-sm" style={{fontSize:11}} title="Toggle report theme"
+                    onClick={()=>setReportThemeMode(m=>m==="light"?"dark":"light")}>
+                    {reportThemeMode==="light"?"☾ Dark":"☀ Light"}
+                  </button>
                 </div>
 
                 {trendMode==="standard" ? (
