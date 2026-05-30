@@ -2656,6 +2656,29 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
           <button className="btn btn-ghost btn-sm" style={{fontSize:10}} onClick={()=>{setFilterDateFrom("");setFilterDateTo("");setFilterRecon("all");}}>✕ Clear</button>}
         <div className="toolbar-spacer"/>
         {rules.length>0 && <button className="btn btn-ghost btn-sm" onClick={onApplyRules}>⚡ Apply Rules</button>}
+        <button className="btn btn-ghost btn-sm" title="Export visible transactions to CSV" onClick={()=>{
+          const esc = v => `"${String(v??'').replace(/"/g,'""')}"`;
+          const header = ['Date','Description','Type','Debit','Credit','Category','Reconciled','Source Account'];
+          const rows = filtered.map(t=>{
+            const src = t.sourceId ? Object.fromEntries(accounts.map(a=>[a.id,a]))[t.sourceId] : null;
+            const cat = t.accountId && t.accountId!=='__je__' ? Object.fromEntries(accounts.map(a=>[a.id,a]))[t.accountId] : null;
+            const isLiability = src?.type==='Liability';
+            const type = t.isJE ? 'Journal Entry'
+              : isLiability ? (t.amount>0?'CC Credit':'CC Charge')
+              : (t.amount>0?'Deposit':'Charge');
+            const debit  = t.amount>0 ? Math.abs(t.amount).toFixed(2) : '';
+            const credit = t.amount<0 ? Math.abs(t.amount).toFixed(2) : '';
+            const catName = t.isJE ? 'Journal Entry' : (t.splits&&t.splits.length>1 ? `Split (${t.splits.length})` : (cat?.name||''));
+            const recon = t.reconciled || (t.reconciledAccts||[]).includes(sourceAccount?.id||t.sourceId) ? 'Yes' : 'No';
+            return [t.date, t.description, type, debit, credit, catName, recon, src?.name||''].map(esc).join(',');
+          });
+          const csv = [header.map(esc).join(','), ...rows].join('\n');
+          const blob = new Blob([csv], {type:'text/csv'});
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href=url; a.download=`transactions-${section}-${new Date().toISOString().slice(0,10)}.csv`;
+          a.click(); URL.revokeObjectURL(url);
+        }}>⬇ Export CSV</button>
       </div>
 
       {/* Bulk action bar */}
@@ -2892,12 +2915,13 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                           }
                         </td>
                         <td style={{paddingLeft:4,whiteSpace:"nowrap",width:72,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
                           {/* Reconcile toggle — Categorized only (transactions and JE lines) */}
                           {!isCounterpart && section==="categorized" && onManualReconcile && sourceAccount && (
                             <span title={showR?"Unreconcile":"Reconcile"}
                               onClick={e=>{e.stopPropagation();onManualReconcile(t,sourceAccount?.id||t.sourceId);}}
                               style={{fontSize:13,fontWeight:800,color:showR?"var(--green)":"var(--border2)",cursor:"pointer",
-                                userSelect:"none",padding:"2px 5px",borderRadius:3,marginRight:4,display:"inline-block"}}>R</span>
+                                userSelect:"none",padding:"2px 5px",borderRadius:3,display:"inline-block",flexShrink:0}}>R</span>
                           )}
                           {t.isJE
                             ? <button className="drill-je-btn" onClick={()=>{
@@ -2925,6 +2949,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                 return <RowActionsMenu items={menuItems}/>;
                               })()
                           }
+                          </div>
                         </td>
                       </tr>
                     );
