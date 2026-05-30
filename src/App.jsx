@@ -1374,15 +1374,10 @@ function DrillRowEditable({ t, isDebit, isCredit, abs, counterpart, running, isE
       <td style={{...p,textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:isCredit?"var(--purple)":"var(--text3)",overflow:"hidden"}}>{isCredit?fmt(abs):""}</td>
       <td style={{...p,textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:13,color:"var(--text)",overflow:"hidden"}}>{fmt(running)}</td>
       <td style={{...p,whiteSpace:"nowrap"}}>
-        <div style={{display:"flex",gap:4,alignItems:"center"}}>
-          {t.isJE
-            ? <button className="drill-je-btn" onClick={()=>onEditJE&&onEditJE(t.jeId)}>✎ JE</button>
-            : <>
-                {onOpenCard && <button className="drill-edit-btn" style={{color:"var(--blue)"}} onClick={()=>onOpenCard(t)}>Open</button>}
-                {onUpdate    && <button className="drill-edit-btn" onClick={()=>setEditing(true)}>Edit</button>}
-              </>
-          }
-        </div>
+        {t.isJE
+          ? <button className="drill-je-btn" onClick={()=>onEditJE&&onEditJE(t.jeId)}>✎ JE</button>
+          : onOpenCard && <button className="drill-edit-btn" style={{color:"var(--blue)"}} onClick={()=>onOpenCard(t)}>Open</button>
+        }
       </td>
     </tr>
   );
@@ -2269,6 +2264,14 @@ function TxnCard({ transaction, accounts, paymentAccounts, onSave, onUncategoriz
   const lineTotal = lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
   const balanced  = lines.length === 1 || Math.abs(lineTotal - total) < 0.005;
 
+  // Derive the transaction type label from the source account type + amount sign
+  const sourceAcct  = accounts.find(a => a.id === sourceId);
+  const isLiability = sourceAcct?.type === "Liability";
+  const isPositive  = transaction.amount > 0;
+  const txnTypeLabel = isLiability
+    ? (isPositive ? "CC Credit" : "CC Charge")
+    : (isPositive ? "Deposit"   : "Charge");
+
   // Guard: ignore overlay clicks for 150ms after mount so the click that
   // opened the card doesn't immediately close it via the modal-overlay handler.
   const overlayReady = useRef(false);
@@ -2325,7 +2328,7 @@ function TxnCard({ transaction, accounts, paymentAccounts, onSave, onUncategoriz
             </div>
           </div>
           <div className="txn-card-amount">
-            <div className="txn-card-amount-label">Amount</div>
+            <div className="txn-card-amount-label">{txnTypeLabel}</div>
             <div className="txn-card-amount-value">{fmt(total)}</div>
           </div>
         </div>
@@ -2866,11 +2869,6 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                               <td onClick={e=>e.stopPropagation()}>
                                 {isMatched && <span className="matched-badge">🔗 matched</span>}
                               </td>
-                              <td style={{textAlign:"center",width:28}} onClick={e=>e.stopPropagation()}>
-                                <span title={showR?"Unreconcile":"Reconcile"}
-                                  onClick={()=>onManualReconcile&&onManualReconcile(t,sourceAccount?.id||t.sourceId)}
-                                  style={{fontSize:14,fontWeight:800,color:showR?"var(--green)":"var(--border2)",cursor:"pointer",userSelect:"none",padding:"2px 4px",borderRadius:3}}>R</span>
-                              </td>
                             </>
                           : <>
                               <td><span className={`amount ${t.amount>=0?"pos":"neg"}`}>{fmt(t.amount)}</span></td>
@@ -2916,17 +2914,6 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                         </div>
                                 }
                               </td>
-                              <td style={{paddingLeft:2,whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
-                                {t.accountId && onSplit && (
-                                  <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:"2px 6px",opacity:.6}}
-                                    onClick={()=>onSplit(t)} title="Split across categories">⑂</button>
-                                )}
-                              </td>
-                              <td style={{textAlign:"center",width:28}} onClick={e=>e.stopPropagation()}>
-                                <span title={showR?"Unreconcile":"Reconcile"}
-                                  onClick={()=>onManualReconcile&&onManualReconcile(t,sourceAccount?.id||t.sourceId)}
-                                  style={{fontSize:14,fontWeight:800,color:showR?"var(--green)":"var(--border2)",cursor:"pointer",userSelect:"none",padding:"2px 4px",borderRadius:3}}>R</span>
-                              </td>
                             </>
                         }
                         <td style={{paddingLeft:4,whiteSpace:"nowrap",width:48,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
@@ -2942,6 +2929,8 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                 if (matchCandidate)
                                   menuItems.push({label:"🔗 Match Transfer", action:()=>onMatchTransfer&&onMatchTransfer(matchCandidate.id,t.id)});
                                 if (menuItems.length) menuItems.push("---");
+                                if (onManualReconcile && sourceAccount && section!=="excluded")
+                                  menuItems.push({label: showR?"Unreconcile ✓":"Reconcile", action:()=>onManualReconcile(t,sourceAccount?.id||t.sourceId)});
                                 if (section==="uncategorized")
                                   menuItems.push({label:"Exclude", action:()=>onExclude&&onExclude(t.id,true)});
                                 if (section!=="uncategorized")
@@ -5753,13 +5742,6 @@ export default function FinanceApp() {
         onClose={()=>setShowReportThemeEditor(false)}/>}
       {splitTxn && <SplitModal transaction={splitTxn} accounts={activeAccounts}
         onSave={saveSplit} onClose={()=>setSplitTxn(null)}/>}
-      {cardTxn && <TxnCard
-        transaction={cardTxn}
-        accounts={activeAccounts}
-        paymentAccounts={tabList}
-        onSave={handleCardSave}
-        onUncategorize={deleteTxn}
-        onClose={()=>setCardTxn(null)}/>}
       {(drillAccount||coaDrillAccount) && <DrillModal
         account={drillAccount||coaDrillAccount}
         transactions={transactions} manualJEs={manualJEs} allAccounts={accounts}
@@ -5777,6 +5759,14 @@ export default function FinanceApp() {
             setManualJEs(prev=>{ const ex=prev.find(e=>e.id===jeOrAction.id); return ex?prev.map(e=>e.id===jeOrAction.id?jeOrAction:e):[...prev,jeOrAction]; });
           }
         }}/>}
+      {/* TxnCard renders AFTER DrillModal so it stacks on top at the same z-index */}
+      {cardTxn && <TxnCard
+        transaction={cardTxn}
+        accounts={activeAccounts}
+        paymentAccounts={tabList}
+        onSave={handleCardSave}
+        onUncategorize={deleteTxn}
+        onClose={()=>setCardTxn(null)}/>}
 
       {/* Rules slide-in panel */}
       {showRulesPanel && (
