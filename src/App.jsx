@@ -3377,6 +3377,7 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   const [editFields,    setEditFields]   = useState({});
   const [expandedLogDate, setExpandedLogDate] = useState(null);
   const [confirmReset,    setConfirmReset]    = useState(false);
+  const [autoMsg,         setAutoMsg]         = useState("");
 
   const acctById = Object.fromEntries((accounts||[]).map(a=>[a.id,a]));
   const acct = acctById[account.id];
@@ -3499,6 +3500,71 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
   const diff   = endBal - clearedTotal;
   const isBalanced = Math.abs(diff)<0.005;
   const toggle = id => setCleared(s=>{ const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n; });
+
+  // ── Auto-Reconcile: subset-sum to hit endBal exactly ─────────────────────
+  const handleAutoReconcile = () => {
+    setAutoMsg("");
+    // Each item's net contribution to clearedTotal
+    const itemContrib = (item) => {
+      const {debit, credit} = getDebitCredit(item);
+      return isDebitNormal ? debit - credit : credit - debit;
+    };
+
+    // Target: sum of selected contributions must equal endBal - startingBalance
+    const rawTarget = endBal - startingBalance;
+    const targetCents = Math.round(rawTarget * 100);
+
+    // Build candidates — skip zero-contribution items
+    const candidates = allItems.filter(i => Math.round(itemContrib(i) * 100) !== 0);
+
+    if (candidates.length === 0) {
+      setAutoMsg("No transactions to match against.");
+      return;
+    }
+
+    if (targetCents === 0) {
+      setCleared(new Set());
+      setAutoMsg("✓ Target is zero — no transactions need to be cleared.");
+      return;
+    }
+
+    // DP subset-sum over amounts-in-cents.
+    // dp: Map< sumCents → {id, prevSum} | null >
+    // null = base case (empty selection, sum = 0)
+    const MAX_STATES = 400000;
+    const dp = new Map([[0, null]]);
+
+    let found = false;
+    outer: for (const item of candidates) {
+      const amt = Math.round(itemContrib(item) * 100);
+      const additions = [];
+      for (const [sum] of dp) {
+        const ns = sum + amt;
+        if (!dp.has(ns)) {
+          additions.push([ns, {id: item.id, prevSum: sum}]);
+          if (ns === targetCents) { found = true; break; }
+        }
+      }
+      for (const [s, v] of additions) dp.set(s, v);
+      if (found) break outer;
+      if (dp.size > MAX_STATES) break;
+    }
+
+    if (dp.has(targetCents)) {
+      const selected = new Set();
+      let node = dp.get(targetCents);
+      while (node !== null) {
+        selected.add(node.id);
+        node = dp.get(node.prevSum);
+      }
+      setCleared(selected);
+      setAutoMsg(`✓ Auto-matched ${selected.size} transaction${selected.size !== 1 ? "s" : ""} — click Reconcile when ready.`);
+    } else if (dp.size > MAX_STATES) {
+      setAutoMsg("Too many transactions to solve automatically. Try narrowing the date range, or select manually.");
+    } else {
+      setAutoMsg("No exact combination found. The transactions may not add up to this balance — check for missing items.");
+    }
+  };
 
   const startEdit = (item) => {
     setEditingId(item.id);
@@ -3655,6 +3721,15 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
           <div style={{display:"flex",alignItems:"center",gap:12,marginTop:10,flexWrap:"wrap"}}>
             <button className="btn btn-ghost btn-sm" onClick={()=>setCleared(new Set(allItems.map(i=>i.id)))}>Select All</button>
             <button className="btn btn-ghost btn-sm" onClick={()=>setCleared(new Set())}>Clear All</button>
+            <button className="btn btn-ghost btn-sm" style={{color:"var(--accent)",borderColor:"rgba(200,241,53,.3)"}}
+              onClick={handleAutoReconcile} title="Automatically find which transactions sum to the ending balance">
+              ⚡ Auto-Match
+            </button>
+            {autoMsg && (
+              <span style={{fontSize:12,color:autoMsg.startsWith("✓")?"var(--green)":"var(--amber)",fontFamily:"DM Mono,monospace"}}>
+                {autoMsg}
+              </span>
+            )}
             <div style={{marginLeft:"auto",display:"flex",gap:14}}>
               <span style={{fontSize:12,color:"var(--text3)"}}>Cleared: <b style={{fontFamily:"DM Mono,monospace",color:"var(--text)"}}>{fmt(clearedTotal)}</b></span>
               <span style={{fontSize:12,color:"var(--text3)"}}>Difference: <b className={`recon-diff ${isBalanced?"ok":"off"}`}>{fmt(diff)}</b></span>
