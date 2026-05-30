@@ -2234,7 +2234,7 @@ function RowActionsMenu({ items }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSACTION CARD  (QuickBooks-style bill/check form)
 // ─────────────────────────────────────────────────────────────────────────────
-function TxnCard({ transaction, accounts, paymentAccounts, onSave, onHardDelete, onClose }) {
+function TxnCard({ transaction, accounts, paymentAccounts, onSave, onUncategorize, onClose }) {
   const [payee,    setPayee]    = useState(transaction.description || "");
   const [date,     setDate]     = useState(transaction.date || "");
   const [sourceId, setSourceId] = useState(
@@ -2385,12 +2385,12 @@ function TxnCard({ transaction, accounts, paymentAccounts, onSave, onHardDelete,
         <div className="txn-card-footer">
           {confirmDel
             ? <span style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:13,color:"var(--text2)"}}>Permanently delete this transaction?</span>
-                <button className="btn btn-sm" style={{background:"var(--red)",color:"#fff",border:"none"}}
-                  onClick={() => { onHardDelete(transaction.id); onClose(); }}>Yes, delete</button>
+                <span style={{fontSize:13,color:"var(--text2)"}}>Uncategorize this transaction?</span>
+                <button className="btn btn-sm" style={{background:"var(--amber)",color:"#0f0f11",border:"none"}}
+                  onClick={() => { onUncategorize(transaction.id); onClose(); }}>Yes, uncategorize</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDel(false)}>Cancel</button>
               </span>
-            : <button className="btn btn-danger btn-sm" onClick={() => setConfirmDel(true)}>Delete</button>
+            : <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDel(true)}>Uncategorize</button>
           }
           <div style={{marginLeft:"auto",display:"flex",gap:8}}>
             <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
@@ -5753,7 +5753,7 @@ export default function FinanceApp() {
         accounts={activeAccounts}
         paymentAccounts={tabList}
         onSave={handleCardSave}
-        onHardDelete={hardDeleteTxn}
+        onUncategorize={deleteTxn}
         onClose={()=>setCardTxn(null)}/>}
       {(drillAccount||coaDrillAccount) && <DrillModal
         account={drillAccount||coaDrillAccount}
