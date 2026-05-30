@@ -2494,19 +2494,25 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
 
   const showJournal = !!sourceAccount;
 
-  // Find transfer match candidates for uncategorized txns classified to another asset/liability
+  // For each uncategorized txn in this account, find a categorized txn from another
+  // source that was classified TO this account — those are potential transfer matches.
   const matchCandidates = useMemo(()=>{
     const map = {};
     if (!sourceAccount) return map;
-    categorized.forEach(t => {
-      const catAcct = acctById[t.accountId];
-      if (!catAcct || !["Asset","Liability"].includes(catAcct.type)) return;
-      if (t.transferMatchId) return; // already matched
-      const candidate = findTransferMatch(t, allTransactions);
-      if (candidate) map[t.id] = candidate;
+    uncategorized.forEach(uncatTxn => {
+      if (uncatTxn.transferMatchId) return;
+      const anchor = allTransactions.find(t =>
+        t.id !== uncatTxn.id &&
+        t.accountId === sourceAccount.id &&           // classified TO this account
+        t.sourceId  !== sourceAccount.id &&           // coming from another account
+        !t.transferMatchId &&                         // not already matched
+        Math.abs(Math.abs(t.amount) - Math.abs(uncatTxn.amount)) < 0.01 &&
+        Math.abs(dateMs(t.date) - dateMs(uncatTxn.date)) <= MATCH_WINDOW_DAYS * 86400000
+      );
+      if (anchor) map[uncatTxn.id] = anchor;
     });
     return map;
-  },[categorized, allTransactions, acctById, sourceAccount]);
+  },[uncategorized, allTransactions, sourceAccount]);
 
   const matchBannerCount = Object.keys(matchCandidates).length;
 
@@ -2591,12 +2597,12 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
         </div>
       )}
 
-      {/* Transfer match banner — shown in categorized view when matches exist */}
-      {section==="categorized" && matchBannerCount>0 && (
+      {/* Transfer match banner — shown in uncategorized view when matches exist */}
+      {section==="uncategorized" && matchBannerCount>0 && (
         <div className="match-banner">
           <span className="match-banner-icon">🔗</span>
           <span className="match-banner-text">
-            <strong>{matchBannerCount} transfer{matchBannerCount>1?"s":""}</strong> can be matched to counterpart transactions below.
+            <strong>{matchBannerCount} possible transfer{matchBannerCount>1?"s":""}</strong> detected — a payment from another account matches {matchBannerCount>1?"these transactions":"this transaction"} below.
           </span>
         </div>
       )}
@@ -2703,6 +2709,11 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                   </span>
                                 }
                                 {isMatched && !isCounterpart && <span className="matched-badge" style={{marginLeft:8}}>🔗 matched</span>}
+                                {!isMatched && !isCounterpart && matchCandidate && (
+                                  <span className="transfer-badge" style={{marginLeft:8,background:"rgba(96,165,250,.12)",color:"var(--blue)",borderColor:"rgba(96,165,250,.25)"}}>
+                                    🔗 transfer from {acctById[matchCandidate.sourceId]?.name || "another account"}
+                                  </span>
+                                )}
                               </div>
                           }
                         </td>
@@ -2751,14 +2762,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                 }
                               </td>
                               <td onClick={e=>e.stopPropagation()}>
-                                {isMatched
-                                  ? <span className="matched-badge">🔗 matched</span>
-                                  : matchCandidate
-                                    ? <button className="match-btn" onClick={()=>onMatchTransfer(t.id, matchCandidate.id)}>
-                                        🔗 Match
-                                      </button>
-                                    : null
-                                }
+                                {isMatched && <span className="matched-badge">🔗 matched</span>}
                               </td>
                               <td style={{textAlign:"center",width:28}} onClick={e=>e.stopPropagation()}>
                                 <span title={showR?"Unreconcile":"Reconcile"}
@@ -2835,6 +2839,11 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                             {!t.isJE && !isCounterpart && onOpenCard && (section==="categorized" || section==="uncategorized") && (
                               <button className="del-btn" style={{color:"var(--blue)",borderColor:"rgba(96,165,250,.3)"}}
                                 onClick={()=>onOpenCard(t)}>{section==="uncategorized"?"Split":"Open"}</button>
+                            )}
+                            {/* Uncategorized: Transfer match button */}
+                            {!t.isJE && !isCounterpart && section==="uncategorized" && matchCandidate && (
+                              <button className="match-btn" style={{padding:"2px 9px",fontSize:11}}
+                                onClick={()=>onMatchTransfer&&onMatchTransfer(matchCandidate.id, t.id)}>🔗 Match</button>
                             )}
                             {/* Uncategorized: Exclude */}
                             {!t.isJE && !isCounterpart && section==="uncategorized" && (
