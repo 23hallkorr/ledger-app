@@ -5152,21 +5152,29 @@ export default function FinanceApp() {
               </div>
               {showSearch && globalSearch && (()=>{
                 const q = globalSearch.toLowerCase();
+                // Helper: does a number match the query string?
+                const matchAmt = n => {
+                  const abs = Math.abs(n||0);
+                  const plain = abs.toFixed(2);
+                  const comma = plain.replace(/\B(?=(\d{3})+(?!\d))/g,",");
+                  return plain.includes(q) || comma.includes(q) ||
+                    ("$"+plain).includes(q) || ("$"+comma).includes(q);
+                };
                 const txnResults = transactions.filter(t=>{
                   if (!t.accountId || t.excluded || excludedTxns.has(t.id)) return false;
-                  const descMatch = (t.description||"").toLowerCase().includes(q);
-                  const abs = Math.abs(t.amount||0);
-                  const amtMatch = abs.toFixed(2).includes(q) ||
-                    abs.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,",").includes(q) ||
-                    fmt(t.amount).includes(q);
-                  return descMatch || amtMatch;
+                  if ((t.description||"").toLowerCase().includes(q)) return true;
+                  if (matchAmt(t.amount)) return true;
+                  // Also match individual split line amounts
+                  if (t.splits?.length > 0 && t.splits.some(s=>matchAmt(s.amount))) return true;
+                  return false;
                 }).sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,20);
                 const jeResults = (manualJEs||[]).filter(je=>{
-                  const descMatch = (je.memo||"").toLowerCase().includes(q);
-                  const total = je.lines ? je.lines.reduce((s,l)=>s+(parseFloat(l.debit)||0),0) : 0;
-                  const amtMatch = total.toFixed(2).includes(q) ||
-                    total.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,",").includes(q);
-                  return descMatch || amtMatch;
+                  if ((je.memo||"").toLowerCase().includes(q)) return true;
+                  if (!je.lines) return false;
+                  // Match against every individual line (debit or credit amount)
+                  return je.lines.some(l=>
+                    matchAmt(parseFloat(l.debit)||0) || matchAmt(parseFloat(l.credit)||0)
+                  );
                 }).sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,5);
                 const totalCount = txnResults.length + jeResults.length;
                 const acctById2 = Object.fromEntries(accounts.map(a=>[a.id,a]));
