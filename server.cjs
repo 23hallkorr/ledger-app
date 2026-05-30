@@ -84,6 +84,18 @@ async function fetchRecentPlaidTransactions(pa, sourceId, days = 30) {
   return recent;
 }
 
+async function ensurePlaidBalanceColumns() {
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "PlaidAccount" ADD COLUMN IF NOT EXISTS "balanceCurrent" FLOAT`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "PlaidAccount" ADD COLUMN IF NOT EXISTS "balanceAvailable" FLOAT`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "PlaidAccount" ADD COLUMN IF NOT EXISTS "balanceUpdatedAt" TIMESTAMPTZ`
+  );
+}
+
 async function ensureTransactionColumns() {
   await prisma.$executeRawUnsafe(
     `ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "reconciledAccts" TEXT[] DEFAULT '{}'`
@@ -201,9 +213,10 @@ app.post("/api/plaid/sync", async (req, res) => {
 
 app.get("/api/plaid/accounts", async (req, res) => {
   try {
-    const accounts = await prisma.plaidAccount.findMany({
-      select: { plaidAccountId:true, name:true, mask:true, type:true, subtype:true, cursor:true, mappedToId:true },
-    });
+    await ensurePlaidBalanceColumns().catch(e => console.warn("PlaidAccount balance migration skipped:", e.message));
+    const accounts = await prisma.$queryRawUnsafe(
+      `SELECT "plaidAccountId", name, mask, type, subtype, cursor, "mappedToId", "balanceCurrent", "balanceAvailable", "balanceUpdatedAt" FROM "PlaidAccount"`
+    );
     res.json({ accounts });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -213,6 +226,7 @@ app.get("/api/plaid/accounts", async (req, res) => {
 // ── Plaid: fetch live balances for all mapped accounts ────────────────────────
 app.get("/api/plaid/balances", async (req, res) => {
   try {
+    await ensurePlaidBalanceColumns().catch(e => console.warn("PlaidAccount balance migration skipped:", e.message));
     const accounts = await prisma.plaidAccount.findMany({
       where: { mappedToId: { not: null } },
       select: { plaidAccountId: true, mappedToId: true, accessToken: true },
@@ -223,12 +237,20 @@ app.get("/api/plaid/balances", async (req, res) => {
         const response = await plaid.accountsBalanceGet({ access_token: pa.accessToken });
         const account = response.data.accounts.find(a => a.account_id === pa.plaidAccountId);
         if (account) {
+          const current   = account.balances.current;
+          const available = account.balances.available;
+          const updatedAt = new Date().toISOString();
+          await prisma.$executeRawUnsafe(
+            `UPDATE "PlaidAccount" SET "balanceCurrent" = $1, "balanceAvailable" = $2, "balanceUpdatedAt" = NOW() WHERE "plaidAccountId" = $3`,
+            current, available, pa.plaidAccountId
+          );
           balances.push({
             plaidAccountId: pa.plaidAccountId,
             mappedToId:     pa.mappedToId,
-            current:        account.balances.current,
-            available:      account.balances.available,
+            current,
+            available,
             name:           account.name,
+            updatedAt,
           });
         }
       } catch (e) {

@@ -3839,6 +3839,21 @@ export default function FinanceApp() {
               remapTable[t.sourceId] ? {...t, sourceId: remapTable[t.sourceId]} : t
             ));
           }
+          // Seed bank balances from last saved Plaid balance data
+          const savedBalances = {};
+          d.accounts.forEach(pa => {
+            if (pa.balanceCurrent != null) {
+              const sourceId = pa.mappedToId || pa.plaidAccountId;
+              savedBalances[sourceId] = {
+                current:   pa.balanceCurrent,
+                available: pa.balanceAvailable,
+                updatedAt: pa.balanceUpdatedAt ? new Date(pa.balanceUpdatedAt) : null,
+              };
+            }
+          });
+          if (Object.keys(savedBalances).length) {
+            setBankBalances(prev => ({...prev, ...savedBalances}));
+          }
         }
       })
       .catch(()=>{});
@@ -3964,9 +3979,9 @@ export default function FinanceApp() {
           // Key by mappedToId (COA account id) so it matches s.id in the card
           const sourceId = b.mappedToId || b.plaidAccountId;
           newBalances[sourceId] = {
-            current: b.current,
+            current:   b.current,
             available: b.available,
-            updatedAt: new Date(),
+            updatedAt: b.updatedAt ? new Date(b.updatedAt) : new Date(),
           };
           console.log(`Balance set for ${sourceId}:`, b.current);
         });
