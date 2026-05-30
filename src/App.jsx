@@ -2892,8 +2892,8 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                           }
                         </td>
                         <td style={{paddingLeft:4,whiteSpace:"nowrap",width:72,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
-                          {/* Reconcile toggle — Categorized only */}
-                          {!t.isJE && !isCounterpart && section==="categorized" && onManualReconcile && sourceAccount && (
+                          {/* Reconcile toggle — Categorized only (transactions and JE lines) */}
+                          {!isCounterpart && section==="categorized" && onManualReconcile && sourceAccount && (
                             <span title={showR?"Unreconcile":"Reconcile"}
                               onClick={e=>{e.stopPropagation();onManualReconcile(t,sourceAccount?.id||t.sourceId);}}
                               style={{fontSize:13,fontWeight:800,color:showR?"var(--green)":"var(--border2)",cursor:"pointer",
