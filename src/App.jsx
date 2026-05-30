@@ -2309,27 +2309,33 @@ function TxnCard({ transaction, accounts, paymentAccounts, onSave, onUncategoriz
     <div className="modal-overlay" onClick={() => { if (overlayReady.current) onClose(); }}>
       <div className="txn-card-modal" onClick={e => e.stopPropagation()}>
 
-        {/* ── Top: payee / account / date / amount ── */}
-        <div className="txn-card-top">
-          <div className="txn-card-fields">
-            <div className="txn-card-field" style={{flex:"2 1 200px"}}>
-              <label>Payee</label>
-              <input type="text" value={payee} onChange={e => setPayee(e.target.value)} style={{minWidth:200}}/>
-            </div>
-            <div className="txn-card-field" style={{flex:"2 1 170px"}}>
-              <label>Payment Account</label>
-              <select value={sourceId} onChange={e => setSourceId(e.target.value)}>
-                {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </div>
-            <div className="txn-card-field" style={{flex:"0 0 150px"}}>
-              <label>Payment Date</label>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)}/>
-            </div>
+        {/* ── Top: type label, fields, amount ── */}
+        <div className="txn-card-top" style={{flexDirection:"column",gap:14}}>
+          {/* Transaction type — top-left, bold */}
+          <div style={{fontFamily:"DM Serif Display,serif",fontSize:18,fontWeight:700,color:"var(--text)",letterSpacing:"-0.3px"}}>
+            {txnTypeLabel}
           </div>
-          <div className="txn-card-amount">
-            <div className="txn-card-amount-label">{txnTypeLabel}</div>
-            <div className="txn-card-amount-value">{fmt(total)}</div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:18,flexWrap:"wrap",width:"100%"}}>
+            <div className="txn-card-fields" style={{flex:1}}>
+              <div className="txn-card-field" style={{flex:"2 1 200px"}}>
+                <label>Payee</label>
+                <input type="text" value={payee} onChange={e => setPayee(e.target.value)} style={{minWidth:200}}/>
+              </div>
+              <div className="txn-card-field" style={{flex:"2 1 170px"}}>
+                <label>Payment Account</label>
+                <select value={sourceId} onChange={e => setSourceId(e.target.value)}>
+                  {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </div>
+              <div className="txn-card-field" style={{flex:"0 0 150px"}}>
+                <label>Payment Date</label>
+                <input type="date" value={date} onChange={e => setDate(e.target.value)}/>
+              </div>
+            </div>
+            <div className="txn-card-amount">
+              <div className="txn-card-amount-label">Amount</div>
+              <div className="txn-card-amount-value">{fmt(total)}</div>
+            </div>
           </div>
         </div>
 
@@ -2423,7 +2429,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
   const [filterDateTo,  setFilterDateTo]  = useState("");
   const [filterRecon,   setFilterRecon]   = useState("all");
   const [editDescVal,   setEditDescVal]   = useState("");
-  const [colWidths,     setColWidths]     = useState({date:90,desc:320,amt:110,cat:220,transfer:130,del:48});
+  const [colWidths,     setColWidths]     = useState({date:90,desc:320,amt:110,cat:220,transfer:130,del:72});
   const [sortKey,       setSortKey]       = useState("date");
   const [sortDir,       setSortDir]       = useState("desc");
   const setCW = (k,w) => setColWidths(p=>({...p,[k]:w}));
@@ -2871,7 +2877,20 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                               </td>
                             </>
                           : <>
-                              <td><span className={`amount ${t.amount>=0?"pos":"neg"}`}>{fmt(t.amount)}</span></td>
+                              <td style={{whiteSpace:"nowrap"}}>
+                                {(()=>{
+                                  const src = t.sourceId ? acctById[t.sourceId] : null;
+                                  const lbl = src?.type==="Liability"
+                                    ? (t.amount>0?"CC Credit":"CC Charge")
+                                    : (t.amount>0?"Deposit":"Charge");
+                                  return (
+                                    <div style={{display:"flex",flexDirection:"column",gap:1}}>
+                                      <span style={{fontSize:10,color:"var(--text3)",fontFamily:"DM Mono,monospace",letterSpacing:"0.5px"}}>{lbl}</span>
+                                      <span className={`amount ${t.amount>=0?"pos":"neg"}`}>{fmt(t.amount)}</span>
+                                    </div>
+                                  );
+                                })()}
+                              </td>
                               <td style={{cursor:(t.isJE||isCounterpart)?"default":"pointer"}} onClick={e=>{e.stopPropagation();if(!t.isJE&&!isCounterpart&&!isEditing)setEditingId(t.id);}}>
                                 {t.isJE
                                   ? <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -2916,7 +2935,14 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                               </td>
                             </>
                         }
-                        <td style={{paddingLeft:4,whiteSpace:"nowrap",width:48,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
+                        <td style={{paddingLeft:4,whiteSpace:"nowrap",width:72,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
+                          {/* Reconcile toggle — Categorized only */}
+                          {!t.isJE && !isCounterpart && section==="categorized" && onManualReconcile && sourceAccount && (
+                            <span title={showR?"Unreconcile":"Reconcile"}
+                              onClick={e=>{e.stopPropagation();onManualReconcile(t,sourceAccount?.id||t.sourceId);}}
+                              style={{fontSize:13,fontWeight:800,color:showR?"var(--green)":"var(--border2)",cursor:"pointer",
+                                userSelect:"none",padding:"2px 5px",borderRadius:3,marginRight:4,display:"inline-block"}}>R</span>
+                          )}
                           {t.isJE
                             ? <button className="drill-je-btn" onClick={()=>{
                                 const je=(manualJEs||[]).find(e=>e.id===t.jeId);
@@ -2929,8 +2955,7 @@ function TxnTable({ transactions, allTransactions, accounts, sourceAccount, manu
                                 if (matchCandidate)
                                   menuItems.push({label:"🔗 Match Transfer", action:()=>onMatchTransfer&&onMatchTransfer(matchCandidate.id,t.id)});
                                 if (menuItems.length) menuItems.push("---");
-                                if (onManualReconcile && sourceAccount && section!=="excluded")
-                                  menuItems.push({label: showR?"Unreconcile ✓":"Reconcile", action:()=>onManualReconcile(t,sourceAccount?.id||t.sourceId)});
+                                // Reconcile only available in Categorized tab — handled via the R button, not the menu
                                 if (section==="uncategorized")
                                   menuItems.push({label:"Exclude", action:()=>onExclude&&onExclude(t.id,true)});
                                 if (section!=="uncategorized")
@@ -3386,14 +3411,16 @@ function JournalEntryPage({ accounts, postedEntries, onPost, onEdit, onDelete })
 // ─────────────────────────────────────────────────────────────────────────────
 // RECONCILIATION MODAL
 // ─────────────────────────────────────────────────────────────────────────────
-function ReconcileModal({ account, transactions, manualJEs, accounts, reconHistory, reconciliations, manualRecons, onUndo, onComplete, onUpdate, onClose }) {
+function ReconcileModal({ account, transactions, manualJEs, accounts, reconHistory, reconciliations, manualRecons, manualReconLog, onUndo, onComplete, onUpdate, onClose, onResetAccount }) {
   const [endBalance,   setEndBalance]   = useState("");
   const [endDate,      setEndDate]      = useState(()=>new Date().toISOString().slice(0,10));
   const [includeAfter, setIncludeAfter] = useState(false);
   const [step,         setStep]         = useState(1);
-  const [cleared, setCleared] = useState(new Set());
-  const [editingId,    setEditingId]    = useState(null);
-  const [editFields,   setEditFields]   = useState({});
+  const [cleared,       setCleared]      = useState(new Set());
+  const [editingId,     setEditingId]    = useState(null);
+  const [editFields,    setEditFields]   = useState({});
+  const [expandedLogDate, setExpandedLogDate] = useState(null);
+  const [confirmReset,    setConfirmReset]    = useState(false);
 
   const acctById = Object.fromEntries((accounts||[]).map(a=>[a.id,a]));
   const acct = acctById[account.id];
@@ -3552,6 +3579,7 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary ml-auto" disabled={!endBalance||!endDate} onClick={()=>setStep(2)}>Continue →</button>
         </div>
+        {/* ── Previous Formal Reconciliations ── */}
         {(reconHistory||[]).filter(h=>h.acctId===account.id).length > 0 && (
           <div style={{marginTop:18,paddingTop:14,borderTop:"1px solid var(--border)"}}>
             <div style={{fontSize:11,color:"var(--text3)",textTransform:"uppercase",letterSpacing:"1px",fontFamily:"DM Mono,monospace",marginBottom:10}}>Previous Reconciliations</div>
@@ -3568,6 +3596,89 @@ function ReconcileModal({ account, transactions, manualJEs, accounts, reconHisto
             ))}
           </div>
         )}
+
+        {/* ── Manual Reconciliation Log ── */}
+        {(()=>{
+          const log = (manualReconLog?.[account.id] || []);
+          if (!log.length) return null;
+          // Group by date
+          const byDate = {};
+          log.forEach(e => {
+            if (!byDate[e.date]) byDate[e.date] = [];
+            byDate[e.date].push(e);
+          });
+          const dates = Object.keys(byDate).sort((a,b)=>b.localeCompare(a));
+          return (
+            <div style={{marginTop:18,paddingTop:14,borderTop:"1px solid var(--border)"}}>
+              <div style={{fontSize:11,color:"var(--text3)",textTransform:"uppercase",letterSpacing:"1px",fontFamily:"DM Mono,monospace",marginBottom:10}}>Manual Reconciliation Log</div>
+              {dates.map(date=>{
+                const entries = byDate[date];
+                const netEffect = entries.reduce((s,e)=>s+(e.action==="reconcile"?Math.abs(e.amount):-Math.abs(e.amount)),0);
+                const isOpen = expandedLogDate===date;
+                return (
+                  <div key={date} style={{borderBottom:"1px solid var(--border)"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 0",cursor:"pointer"}}
+                      onClick={()=>setExpandedLogDate(isOpen?null:date)}>
+                      <div style={{display:"flex",alignItems:"center",gap:12}}>
+                        <span style={{fontFamily:"DM Mono,monospace",fontSize:12,color:"var(--text)"}}>{date}</span>
+                        <span style={{fontSize:11,color:"var(--text3)"}}>{entries.length} change{entries.length!==1?"s":""}</span>
+                        <span style={{fontSize:11,fontFamily:"DM Mono,monospace",color:netEffect>=0?"var(--green)":"var(--red)"}}>
+                          Net: {netEffect>=0?"+":""}{fmt(netEffect)}
+                        </span>
+                      </div>
+                      <span style={{fontSize:11,color:"var(--blue)",fontFamily:"DM Mono,monospace"}}>{isOpen?"▲ Hide":"▼ Show"}</span>
+                    </div>
+                    {isOpen && (
+                      <div style={{paddingBottom:10}}>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                          <thead>
+                            <tr style={{background:"var(--surface2)"}}>
+                              <th style={{padding:"5px 8px",textAlign:"left",fontFamily:"DM Mono,monospace",fontSize:10,color:"var(--text3)",fontWeight:400}}>TIME</th>
+                              <th style={{padding:"5px 8px",textAlign:"left",fontFamily:"DM Mono,monospace",fontSize:10,color:"var(--text3)",fontWeight:400}}>ACTION</th>
+                              <th style={{padding:"5px 8px",textAlign:"left",fontFamily:"DM Mono,monospace",fontSize:10,color:"var(--text3)",fontWeight:400}}>DESCRIPTION</th>
+                              <th style={{padding:"5px 8px",textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:10,color:"var(--text3)",fontWeight:400}}>AMOUNT</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {entries.map(e=>(
+                              <tr key={e.id} style={{borderBottom:"1px solid var(--border)"}}>
+                                <td style={{padding:"5px 8px",color:"var(--text3)",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>{e.timestamp?new Date(e.timestamp).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):""}</td>
+                                <td style={{padding:"5px 8px"}}>
+                                  <span style={{fontSize:10,padding:"1px 6px",borderRadius:8,fontFamily:"DM Mono,monospace",
+                                    background:e.action==="reconcile"?"rgba(74,222,128,.15)":"rgba(255,82,82,.12)",
+                                    color:e.action==="reconcile"?"var(--green)":"var(--red)"}}>
+                                    {e.action==="reconcile"?"✓ Reconciled":"✕ Unreconciled"}
+                                  </span>
+                                </td>
+                                <td style={{padding:"5px 8px",color:"var(--text2)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.description}</td>
+                                <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"DM Mono,monospace",color:e.amount>=0?"var(--green)":"var(--red)"}}>{fmt(e.amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+
+        {/* ── Reset Account ── */}
+        <div style={{marginTop:18,paddingTop:14,borderTop:"1px solid var(--border)"}}>
+          {confirmReset
+            ? <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:13,color:"var(--text2)"}}>This will unreconcile all transactions and clear all reconciliation history for <b>{account.name}</b>. Continue?</span>
+                <button className="btn btn-sm" style={{background:"var(--red)",color:"#fff",border:"none",flexShrink:0}}
+                  onClick={()=>{ if(onResetAccount) onResetAccount(account.id); onClose(); }}>Yes, Reset</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmReset(false)}>Cancel</button>
+              </div>
+            : <button className="btn btn-danger btn-sm" onClick={()=>setConfirmReset(true)}>
+                Reset All Reconciliations
+              </button>
+          }
+        </div>
       </div>
     </div>
   );
@@ -3998,6 +4109,7 @@ export default function FinanceApp() {
   const [trendDrillPeriod,setTrendDrillPeriod]= useState(null);
   const [plaidAccounts,   setPlaidAccounts]   = useState([]);
   const [manualRecons,    setManualRecons]    = useState({}); // {acctId: [txnId,...]}
+  const [manualReconLog,  setManualReconLog]  = useState({}); // {acctId: [{id,date,txnId,description,amount,action}]}
   const [plaidSyncing,    setPlaidSyncing]    = useState(false);
   const [bankBalances,    setBankBalances]    = useState({}); // {[sourceId]: {current, available, updatedAt}}
   const [syncErrors,      setSyncErrors]      = useState({}); // {[plaidAccountId]: errorCode}
@@ -4044,7 +4156,7 @@ export default function FinanceApp() {
     stateRef.current = {
       transactions, accounts, sources, rules, manualJEs,
       accountOrder, reportNames, reconciliations, reconHistory,
-      appThemeMode, customAppLightTheme, customAppDarkTheme, manualRecons,
+      appThemeMode, customAppLightTheme, customAppDarkTheme, manualRecons, manualReconLog,
       showCoaInactive, excludedTxns: [...excludedTxns],
       customLightTheme, customDarkTheme, reportThemeMode,
     };
@@ -4411,7 +4523,6 @@ export default function FinanceApp() {
   const manualReconcile = useCallback((txn, acctId) => {
     if (!acctId) return;
     if (txn.isJE) {
-      // JE rows: toggle reconciledLines on the parent JE
       setManualJEs(prev => prev.map(je => {
         if (je.id !== txn.jeId) return je;
         const lid = String(txn.jeLineId);
@@ -4428,12 +4539,27 @@ export default function FinanceApp() {
       setManualRecons(prev => {
         const current = prev[acctId] || [];
         const isReconciled = current.includes(txn.id);
-        return {
+        const next = {
           ...prev,
           [acctId]: isReconciled
             ? current.filter(id => id !== txn.id)
             : [...new Set([...current, txn.id])],
         };
+        // Append to log
+        const entry = {
+          id:          `mrl-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          date:        new Date().toISOString().slice(0, 10),
+          timestamp:   new Date().toISOString(),
+          txnId:       txn.id,
+          description: txn.description || "",
+          amount:      txn.amount,
+          action:      isReconciled ? "unreconcile" : "reconcile",
+        };
+        setManualReconLog(log => ({
+          ...log,
+          [acctId]: [...(log[acctId] || []), entry],
+        }));
+        return next;
       });
     }
     setTimeout(save, 100);
@@ -4779,6 +4905,7 @@ export default function FinanceApp() {
             }
           }
           if (d.manualRecons)          setManualRecons(d.manualRecons);
+          if (d.manualReconLog)        setManualReconLog(d.manualReconLog);
           if (d.appThemeMode)          setAppThemeMode(d.appThemeMode);
           if (d.customAppLightTheme)   setCustomAppLightTheme(d.customAppLightTheme);
           if (d.customAppDarkTheme)    setCustomAppDarkTheme(d.customAppDarkTheme);
@@ -4819,6 +4946,7 @@ export default function FinanceApp() {
               }
             }
             if (d.manualRecons)          setManualRecons(d.manualRecons);
+          if (d.manualReconLog)        setManualReconLog(d.manualReconLog);
           if (d.appThemeMode)          setAppThemeMode(d.appThemeMode);
             if (d.customAppLightTheme)   setCustomAppLightTheme(d.customAppLightTheme);
             if (d.customAppDarkTheme)    setCustomAppDarkTheme(d.customAppDarkTheme);
@@ -5068,6 +5196,8 @@ export default function FinanceApp() {
               {showSearch && globalSearch && (()=>{
                 const q = globalSearch.toLowerCase();
                 const results = transactions.filter(t=>{
+                  // Only show categorized (posted) transactions — not excluded or uncategorized
+                  if (!t.accountId || t.excluded || excludedTxns.has(t.id)) return false;
                   const descMatch = (t.description||"").toLowerCase().includes(q);
                   const abs = Math.abs(t.amount||0);
                   const amtMatch = abs.toFixed(2).includes(q) ||
@@ -5718,10 +5848,22 @@ export default function FinanceApp() {
       {reconAccount     && <ReconcileModal account={reconAccount} transactions={transactions}
         manualJEs={manualJEs} accounts={accounts}
         reconHistory={reconHistory} reconciliations={reconciliations}
-        manualRecons={manualRecons}
+        manualRecons={manualRecons} manualReconLog={manualReconLog}
         onUndo={undoReconciliation}
         onUpdate={(id,fields)=>setTransactions(prev=>prev.map(t=>t.id===id?{...t,...fields}:t))}
-        onComplete={completeReconciliation} onClose={()=>setReconAccount(null)}/>}
+        onComplete={completeReconciliation} onClose={()=>setReconAccount(null)}
+        onResetAccount={acctId=>{
+          // Unreconcile all txns for this account, clear all reconciliation data
+          setTransactions(prev=>prev.map(t=>{
+            if (t.sourceId!==acctId && t.accountId!==acctId) return t;
+            return {...t, reconciled:false, reconciledAccts:(t.reconciledAccts||[]).filter(id=>id!==acctId)};
+          }));
+          setManualRecons(prev=>{ const n={...prev}; delete n[acctId]; return n; });
+          setManualReconLog(prev=>{ const n={...prev}; delete n[acctId]; return n; });
+          setReconciliations(prev=>{ const n={...prev}; delete n[acctId]; return n; });
+          setReconHistory(prev=>prev.filter(h=>h.acctId!==acctId));
+          setTimeout(save,200);
+        }}/>}
       {showThemeEditor && <CustomThemeModal
         currentTheme={appThemeMode==="light" ? {...LIGHT_APP_THEME,...(customAppLightTheme||{})} : {...DARK_APP_THEME,...(customAppDarkTheme||{})}}
         mode={appThemeMode}

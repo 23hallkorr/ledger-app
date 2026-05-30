@@ -380,6 +380,7 @@ app.get("/api/data", async (req, res) => {
       customLightTheme:    settingMap["customLightTheme"]    ?? null,
       customDarkTheme:     settingMap["customDarkTheme"]     ?? null,
       manualRecons:        settingMap["manualRecons"]         ?? {},
+      manualReconLog:      settingMap["manualReconLog"]        ?? {},
     });
   } catch (e) {
     console.error("GET /api/data error:", e);
@@ -395,7 +396,7 @@ app.post("/api/data", async (req, res) => {
     accountOrder, reportNames, showCoaInactive, reconHistory,
     appThemeMode, customAppLightTheme, customAppDarkTheme,
     reportThemeMode, customLightTheme, customDarkTheme,
-    manualRecons,
+    manualRecons, manualReconLog,
   } = req.body;
 
   if (transactions.length === 0 && accounts.length === 0) {
@@ -496,6 +497,7 @@ app.post("/api/data", async (req, res) => {
       upsert("customLightTheme",    customLightTheme    ?? null),
       upsert("customDarkTheme",     customDarkTheme     ?? null),
       upsert("manualRecons",         manualRecons        ?? {}),
+      upsert("manualReconLog",       manualReconLog      ?? {}),
     ]);
 
     console.log(`  POST /api/data DONE in ${Date.now()-t0}ms`);
